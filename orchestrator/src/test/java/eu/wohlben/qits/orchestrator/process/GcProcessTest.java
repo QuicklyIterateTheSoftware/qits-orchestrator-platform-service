@@ -305,16 +305,18 @@ class GcProcessTest {
     assertTrue(peers.bodiesFor(PLAN).isEmpty(), "no plan may be asked for without pins");
     assertTrue(peers.bodiesFor(IMAGES).isEmpty(), "no image may be swept without pins");
 
-    // AND WHAT NEEDS NO PINS STILL RUNS. That is the point of the edges being per step: the volume
-    // sweep hangs off usage.before alone, so a broken pin read costs the platform nothing there.
-    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.volumes").status);
+    // AND EVERYTHING THAT NEEDS NO PINS STILL RUNS. That is the point of the edges being per step:
+    // both the volume sweep and the build-cache prune hang off usage.before alone, so a broken pin
+    // read costs the platform no reclaim it could have had. The build cache is the larger half of
+    // the measured problem, and it has no keep-set to be wrong about.
     assertEquals(RunStatus.SUCCEEDED.name(), steps.get("usage.before").status);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.volumes").status);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.build-cache").status);
+    assertFalse(peers.bodiesFor(BUILD_CACHE).isEmpty(), "the prune needs no pins and must be asked for");
 
-    // THE BUILD CACHE IS THE ONE THAT SURPRISES. It needs no pin set of its own, but the pinned
-    // contract makes it depend on containers.images — a prune reads the same daemon the image sweep
-    // was about to change, and running it against a store whose sweep never happened would report a
-    // reclaim nobody can compare to anything. So it is skipped with the rest of that chain.
-    assertEquals(RunStatus.SKIPPED.name(), steps.get("containers.build-cache").status);
+    // usage.after is the one that still goes: it depends on all four deleting steps, and two of
+    // them were skipped, so an "after" figure would be measuring a run that did not happen.
+    assertEquals(RunStatus.SKIPPED.name(), steps.get("usage.after").status);
   }
 
   @Test

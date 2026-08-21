@@ -38,7 +38,7 @@ import java.util.List;
  * <p><b>Fail-closed, and the edges are what makes it so.</b> A failed pin read skips every step that
  * would delete on the strength of that pin — the artifacts plan and sweep, and the image sweep —
  * while the volume sweep and the build-cache prune, which need no pins, still run. Nothing deletes
- * against a keep-set it could not read.
+ * against a keep-set it could not read, and nothing that needs no keep-set is stopped by one.
  *
  * <h2>The steps</h2>
  *
@@ -50,7 +50,7 @@ import java.util.List;
  * artifacts.sweep     artifacts    POST /artifacts/api/gc/sweep {pins}     ← artifacts.plan
  * containers.images   containers   POST /containers/api/gc/images          ← pins.deployments
  * containers.volumes  containers   POST /containers/api/gc/volumes         ← usage.before
- * containers.build-cache containers POST /containers/api/gc/build-cache    ← containers.images
+ * containers.build-cache containers POST /containers/api/gc/build-cache    ← usage.before
  * usage.after         containers   GET  /containers/api/gc/usage           ← everything that deletes
  * </pre>
  *
@@ -181,7 +181,11 @@ public class GcProcess implements TechnicalProcess {
             CONTAINERS_BUILD_CACHE,
             "Prune the build cache",
             PeerTarget.CONTAINERS,
-            List.of(CONTAINERS_IMAGES),
+            // usage.before, NOT containers.images. A prune needs no pin set of its own, so hanging
+            // it off the image sweep would have made a broken pin read cost the platform tens of
+            // gigabytes of cache reclaim for no reason. Declaration order still puts it after the
+            // image sweep, which is all the ordering it ever wanted.
+            List.of(USAGE_BEFORE),
             context ->
                 StepResult.of(
                     context

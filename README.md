@@ -29,7 +29,7 @@ every transitive dependent SKIPPED, while independent steps still run.
 | `artifacts.sweep` | artifacts | `POST /artifacts/api/gc/sweep {pins}` — SKIPPED `dry run` on a dry run | artifacts.plan |
 | `containers.images` | containers | `POST /containers/api/gc/images` | pins.deployments |
 | `containers.volumes` | containers | `POST /containers/api/gc/volumes` | usage.before |
-| `containers.build-cache` | containers | `POST /containers/api/gc/build-cache` | containers.images |
+| `containers.build-cache` | containers | `POST /containers/api/gc/build-cache` | usage.before |
 | `usage.after` | containers | `GET /containers/api/gc/usage` | artifacts.sweep, containers.images, containers.volumes, containers.build-cache |
 
 **The pins are read once and handed on.** `artifacts.plan` and `artifacts.sweep` send
@@ -43,6 +43,10 @@ qits-artifacts uses these instead of its own HTTP readers; a missing member mean
 unanswered, which makes the plan not executable and aborts a sweep. The readers moved here because
 this is the one component holding an idp client for every peer — theirs had no credential and were
 401-ing.
+
+**Only what needs a pin waits for one.** `containers.build-cache` hangs off `usage.before`, not
+off the image sweep: a prune has no keep-set, so a broken pin read must not cost the platform the
+largest reclaim of the night. Declaration order still runs it after the image sweep.
 
 **The image keep-set** is every deployment pin as a local tag, `qits/<applicationName>:<sha>`, plus
 `qits.orchestrator.gc.image-keep-prefixes`. Fail-closed is the edge: a pin read that failed skips

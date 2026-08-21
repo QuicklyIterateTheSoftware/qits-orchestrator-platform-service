@@ -82,7 +82,15 @@ reads, so a failed pin read skips all three before a body runs. `GcProcess.image
 an empty `keep` from an unreadable pin answer — and never gets the chance to. Keep both: the edge is
 the guarantee, the empty-set path is the belt.
 
-If a new step deletes on the strength of a pin, **give it the pin's edge in the same commit.**
+**The rule cuts the other way too: a step with no keep-set must not wait on a pin.**
+`containers.build-cache` and `containers.volumes` hang off `usage.before` alone, because a prune and
+a dangling-volume sweep have nothing a pin could protect — and the build cache is the larger half of
+the measured problem, so skipping it on a pin failure would cost the platform the night's biggest
+reclaim for a reason that does not apply to it. Declaration order is what still runs the prune after
+the image sweep; an edge would have been ordering dressed up as a requirement.
+
+If a new step deletes on the strength of a pin, **give it the pin's edge in the same commit** — and
+if it does not, **do not**.
 
 ## Outbound calls
 
