@@ -1,0 +1,41 @@
+# How qits-platform-deployments deploys this repo. It reads this file from the git host at the built
+# sha, so the answer travels with the commit.
+#
+# CARRYING THE FILE AT ALL is the other thing it says. qits-workspaces reads it on a release to
+# decide whether this repository deploys — a library or an SPA carries none and its release is the
+# trunk push alone — and then promotes onto the branch it is configured with.
+#
+# PLATFORM service: one instance per platform, not one per environment. It is the right tier for two
+# reasons. It is the only component holding an idp client for every peer, which is what lets the pin
+# read be authenticated at all; and the stores it collects — the host image store, the buildkit
+# cache, the registry — are the machine's, shared by every environment on it. A per-environment
+# instance would mean two schedules pruning one docker daemon.
+deployment_target: platform
+
+# One route for the whole segment: the client at /orchestrator/, the API at /orchestrator/api and
+# the document at /orchestrator/q. qits-gateway routes verbatim by prefix, so this one line reaches
+# all three.
+routes: /orchestrator
+
+# The left-navigation entry, and the number is its position. 12 puts it after Configuration:11 at
+# the end of the platform block the operator screens form — Githost:9, Mirror:10, Configuration:11 —
+# rather than among the per-project doors.
+navigation: Orchestrator:12
+
+# THE STORE, DECLARED RATHER THAN CONFIGURED. The line below is what provisions it: a role and a
+# database of its own on the tier's postgres, created before the successor container starts and
+# injected as QITS_RESOURCE_DB_URL / _USERNAME / _PASSWORD — the generic contract the orchestrator
+# jar's datasource defaults read verbatim.
+#
+# The third segment is omitted, so the database is the default derivation: the application name minus
+# its `qits-` prefix, dashes to underscores, under a `qits_` prefix — `qits_platform_orchestrator`.
+#
+# WHAT IS IN IT is the only account of a deletion that exists. Nothing else on the platform records
+# which images a night removed and on the strength of which pin set, so this database is not a cache
+# and a fresh one is not equivalent to the old one.
+resources: postgresql:db
+
+# The readiness endpoint the deployer's health gate curls. The convention derives it from the
+# repository name and would land on exactly this path; it is written out because a probe that 404s
+# fails a deployment for a reason nobody would look for in a config file.
+health_path: /orchestrator/q/health/ready
