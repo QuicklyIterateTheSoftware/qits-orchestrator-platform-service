@@ -107,7 +107,8 @@ and overridable by environment without a rebuild.
 | `qits.orchestrator.targets.ci-url` | `http://qits-ci:8080` | where qits-ci is |
 | `qits.orchestrator.targets.deployments-url` | `http://qits-platform-deployments:8080` | where the deployer is |
 | `qits.orchestrator.gc.enabled` | `true` | whether the CLOCK may start a run |
-| `qits.orchestrator.gc.cron` | `0 40 3 * * ?` | when it does |
+| `qits.orchestrator.gc.cron` | `0 0 3 * * ?` | when it does: 03:00 every day |
+| `qits.orchestrator.gc.time-zone` | `UTC` | the zone the cron is read in (the platform's convention) |
 | `qits.orchestrator.gc.dry-run` | `false` | whether the SCHEDULED run may delete |
 | `qits.orchestrator.gc.image-keep-prefixes` | `qits/build-images/,qits/graalvmce-musl-builder` | tag prefixes no rule may condemn |
 | `qits.orchestrator.gc.image-min-age` | `PT6H` | the build-then-push grace for an image |
