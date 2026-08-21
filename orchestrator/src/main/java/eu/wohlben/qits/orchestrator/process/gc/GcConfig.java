@@ -35,6 +35,9 @@ public class GcConfig {
   @ConfigProperty(name = "qits.orchestrator.gc.build-cache-keep-bytes")
   long buildCacheKeepBytes;
 
+  @ConfigProperty(name = "qits.orchestrator.gc.builder-cache-keep-bytes")
+  long builderCacheKeepBytes;
+
   /** Whether the CLOCK may start a run. A manual run ignores this — a person is the trigger. */
   public boolean enabled() {
     return enabled;
@@ -60,8 +63,19 @@ public class GcConfig {
     return volumeMinAge;
   }
 
-  /** What buildkit may keep after a prune, host builder and buildx containers alike. */
+  /** What the HOST builder may keep after a prune — the cache every CI build warms and re-reads. */
   public long buildCacheKeepBytes() {
     return buildCacheKeepBytes;
+  }
+
+  /**
+   * What a {@code buildx_buildkit_*} BUILDER container may keep.
+   *
+   * <p>Its own number because it is a bootstrap-time cache: warmed once while a machine is built,
+   * then unread until the next bootstrap. Sharing the host's budget is what left a 13.7 GB builder
+   * untouched every night — it was smaller than the budget, so the prune never reached it.
+   */
+  public long builderCacheKeepBytes() {
+    return builderCacheKeepBytes;
   }
 }

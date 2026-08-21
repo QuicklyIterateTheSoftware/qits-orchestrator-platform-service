@@ -112,9 +112,18 @@ and overridable by environment without a rebuild.
 | `qits.orchestrator.gc.image-keep-prefixes` | `qits/build-images/,qits/graalvmce-musl-builder` | tag prefixes no rule may condemn |
 | `qits.orchestrator.gc.image-min-age` | `PT6H` | the build-then-push grace for an image |
 | `qits.orchestrator.gc.volume-min-age` | `PT24H` | the stop-then-start grace for a volume |
-| `qits.orchestrator.gc.build-cache-keep-bytes` | `21474836480` | what buildkit may keep after a prune |
+| `qits.orchestrator.gc.build-cache-keep-bytes` | `10737418240` | what the HOST buildkit cache may keep after a prune |
+| `qits.orchestrator.gc.builder-cache-keep-bytes` | `1073741824` | what a `buildx_buildkit_*` BUILDER container may keep |
 | `qits.orchestrator.gc.call-timeout` | `PT120S` | how long one peer call may take |
 | `qits.auth.machine.audience` | `qits-platform-orchestrator` | this service's own id at qits-platform-idp |
+
+**Two build-cache budgets, because the two caches are not the same kind of thing.** The host cache
+is what every CI build warms and re-reads, so 10 GiB of it is kept — measured against a host sitting
+at ~37 GB. A `buildx_buildkit_*` builder is a bootstrap-time cache: warmed once while a machine is
+built, then unread until the next bootstrap, so it is pruned to 1 GiB. One number for both is what
+left a 13.7 GB bootstrap builder untouched every night — it was smaller than the host budget, so a
+shared keep-storage never reached it. qits-containers falls back to `keepStorageBytes` when
+`builderKeepStorageBytes` is absent.
 
 **Three tier services by configured url.** qits-artifacts, qits-containers and qits-ci are per
 environment (`dev-qits-artifacts`) while this service is platform tier, so a live platform injects

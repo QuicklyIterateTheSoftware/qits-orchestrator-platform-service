@@ -255,7 +255,11 @@ class GcProcessTest {
     JsonNode volumes = json(peers.bodiesFor(VOLUMES).getFirst());
     assertEquals("PT24H", volumes.get("minAge").asText());
     JsonNode cache = json(peers.bodiesFor(BUILD_CACHE).getFirst());
-    assertEquals(21474836480L, cache.get("keepStorageBytes").asLong());
+    // TWO BUDGETS, and the second is the point: a buildx_buildkit_* container is a bootstrap-time
+    // cache, so it is pruned to near-nothing while the host's warm cache is kept. One number for
+    // both left a 13.7 GB bootstrap builder untouched every night.
+    assertEquals(10737418240L, cache.get("keepStorageBytes").asLong());
+    assertEquals(1073741824L, cache.get("builderKeepStorageBytes").asLong());
   }
 
   @Test

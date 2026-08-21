@@ -286,11 +286,24 @@ public class GcProcess implements TechnicalProcess {
     return body.toString();
   }
 
-  /** {@code {"dryRun":…, "keepStorageBytes":21474836480}} */
+  /**
+   * {@code {"dryRun":…, "keepStorageBytes":…, "builderKeepStorageBytes":…}}
+   *
+   * <p><b>Two budgets, because the two caches are not the same kind of thing.</b>
+   * {@code keepStorageBytes} is the host builder's — the cache every CI build warms and re-reads.
+   * {@code builderKeepStorageBytes} is a {@code buildx_buildkit_*} container's, which is warmed once
+   * while a machine is bootstrapped and then unread until the next bootstrap.
+   *
+   * <p>One number for both is what left a 13.7 GB bootstrap builder untouched every night: it was
+   * smaller than the host budget, so a shared keep-storage never reached it. qits-containers falls
+   * back to {@code keepStorageBytes} when the second field is absent, so sending it is safe against
+   * a peer that predates it.
+   */
   private String buildCacheBody(RunContext context) {
     ObjectNode body = JSON.createObjectNode();
     body.put("dryRun", context.dryRun());
     body.put("keepStorageBytes", config.buildCacheKeepBytes());
+    body.put("builderKeepStorageBytes", config.builderCacheKeepBytes());
     return body.toString();
   }
 }
