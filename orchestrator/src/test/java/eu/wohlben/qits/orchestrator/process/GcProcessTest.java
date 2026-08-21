@@ -278,9 +278,13 @@ class GcProcessTest {
     assertTrue(json(peers.bodiesFor(IMAGES).getFirst()).get("dryRun").asBoolean());
     assertTrue(json(peers.bodiesFor(VOLUMES).getFirst()).get("dryRun").asBoolean());
     assertTrue(json(peers.bodiesFor(BUILD_CACHE).getFirst()).get("dryRun").asBoolean());
-    // usage.after depends on the sweep, and a SKIPPED dependency skips it too — the dry run's
-    // "after" figure would be the "before" figure anyway.
-    assertEquals(RunStatus.SKIPPED.name(), steps.get("usage.after").status);
+    // AND THE MEASUREMENT STILL HAPPENS. usage.after depends on the sweep, but a POLICY skip is
+    // not a failure: the run did exactly what it was asked, so nothing after it has a reason not to
+    // run. The live dry run that reported "skipped: artifacts.sweep failed" here — with all nine
+    // calls answering 200 — is what this line exists for.
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("usage.after").status);
+    assertEquals(200, steps.get("usage.after").httpStatus);
+    assertNull(steps.get("usage.after").error);
   }
 
   @Test
@@ -314,8 +318,9 @@ class GcProcessTest {
     assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.build-cache").status);
     assertFalse(peers.bodiesFor(BUILD_CACHE).isEmpty(), "the prune needs no pins and must be asked for");
 
-    // usage.after is the one that still goes: it depends on all four deleting steps, and two of
-    // them were skipped, so an "after" figure would be measuring a run that did not happen.
+    // usage.after DOES cascade here, and the difference from the dry-run case is the whole point:
+    // two of the four steps it depends on were skipped BY A FAILURE, so an "after" figure would be
+    // measuring a run that could not happen rather than one that chose not to.
     assertEquals(RunStatus.SKIPPED.name(), steps.get("usage.after").status);
   }
 

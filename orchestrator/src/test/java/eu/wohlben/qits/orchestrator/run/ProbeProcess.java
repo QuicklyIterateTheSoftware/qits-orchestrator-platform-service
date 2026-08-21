@@ -32,6 +32,19 @@ public class ProbeProcess implements TechnicalProcess {
         context -> new StepResultBuilder().succeeded(id + " ok"));
   }
 
+  /**
+   * A step the process chose not to make — the dry-run case, in the shape the executor must NOT
+   * treat as a failure.
+   */
+  public static StepDefinition policySkipping(String id, String... dependsOn) {
+    return new StepDefinition(
+        id,
+        id,
+        PeerTarget.CONTAINERS,
+        List.of(dependsOn),
+        context -> eu.wohlben.qits.orchestrator.process.StepResult.skipped("dry run"));
+  }
+
   /** A step that fails without calling anything. */
   public static StepDefinition failing(String id, String... dependsOn) {
     return new StepDefinition(

@@ -5,6 +5,7 @@ import eu.wohlben.qits.orchestrator.peer.PeerClient;
 import eu.wohlben.qits.orchestrator.persistence.RunStore;
 import eu.wohlben.qits.orchestrator.process.ProcessRegistry;
 import eu.wohlben.qits.orchestrator.process.RunContext;
+import eu.wohlben.qits.orchestrator.process.SkipKind;
 import eu.wohlben.qits.orchestrator.process.StepDefinition;
 import eu.wohlben.qits.orchestrator.process.StepResult;
 import eu.wohlben.qits.orchestrator.process.TechnicalProcess;
@@ -14,7 +15,6 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,11 +41,17 @@ import org.jboss.logging.Logger;
  * Steps run in DECLARATION ORDER. Before each one, its dependencies are looked at:
  *
  * <ul>
- *   <li>all SUCCEEDED — the step runs;
- *   <li>any FAILED or SKIPPED — the step is SKIPPED with {@code error = "skipped: <step> failed"},
- *       naming the step that actually FAILED rather than the skipped one in between. A cascade that
- *       named its neighbour would make a reader walk the graph backwards to find the cause.
+ *   <li>none of them FAILED — the step runs;
+ *   <li>one FAILED, or was itself skipped BECAUSE something failed — the step is SKIPPED with
+ *       {@code error = "skipped: <step> failed"}, naming the step that actually FAILED rather than
+ *       the skipped one in between. A cascade that named its neighbour would make a reader walk the
+ *       graph backwards to find the cause.
  * </ul>
+ *
+ * <b>A POLICY skip is not a failure and does not cascade.</b> {@code artifacts.sweep} is skipped on
+ * a dry run because that is what a dry run is, so {@code usage.after} still runs — see {@link
+ * SkipKind}, and the live run that proved the distinction has to be a field rather than a
+ * convention.
  *
  * <b>Independent steps still run.</b> A failed pin read stops everything that deletes on the
  * strength of those pins and nothing else — the volume sweep and the build-cache prune do not need
@@ -114,29 +120,31 @@ public class RunExecutor {
    */
   void execute(TechnicalProcess process, UUID runId, boolean dryRun) {
     RunContext context = new RunContext(runId, dryRun, peers);
-    Map<String, RunStatus> statuses = new LinkedHashMap<>();
-    // Which FAILED step is the reason a given step was skipped. A cascade carries the origin
-    // forward, so the third step in a chain still names the one that broke.
-    Map<String, String> failureOrigin = new HashMap<>();
+    // THE ONLY THING A DEPENDENCY CHECK READS. A step is in this map when it FAILED (mapped to
+    // itself) or when it was skipped BECAUSE something failed (mapped to that same origin, carried
+    // forward so the third step in a chain still names the one that broke). A step that succeeded,
+    // and a step the process chose not to make, are simply absent — which is what makes a POLICY
+    // skip stop being contagious.
+    Map<String, String> failureOrigin = new LinkedHashMap<>();
     List<String> lines = new ArrayList<>();
     boolean anyFailed = false;
 
     try {
       for (StepDefinition step : process.steps()) {
-        String blocker = blocker(step, statuses, failureOrigin);
+        String blocker = blocker(step, failureOrigin);
         StepResult result;
         if (blocker != null) {
-          result = StepResult.skipped("skipped: " + blocker + " failed");
-          failureOrigin.put(step.id(), blocker);
+          result = StepResult.skippedByFailure(blocker);
         } else {
           Instant startedAt = Instant.now();
           runs.stepRunning(runId, step.id(), startedAt);
           result = run(step, context);
         }
-        statuses.put(step.id(), result.status());
         if (result.status() == RunStatus.FAILED) {
           anyFailed = true;
           failureOrigin.put(step.id(), step.id());
+        } else if (result.skip() == SkipKind.FAILURE) {
+          failureOrigin.put(step.id(), blocker == null ? step.id() : blocker);
         }
         if (result.answer() != null) {
           context.record(step.id(), result.answer().json(), result.answer().body());
@@ -165,16 +173,21 @@ public class RunExecutor {
   /**
    * Which FAILED step blocks this one, or null.
    *
+   * <p><b>Only a failure blocks.</b> A dependency the process chose not to make — {@code
+   * artifacts.sweep} on a dry run — is a satisfied dependency: nothing went wrong, so nothing after
+   * it has a reason not to run. Reading every non-SUCCEEDED dependency as broken is what made the
+   * platform's first real dry run report {@code usage.after} as {@code skipped: artifacts.sweep
+   * failed} while all nine calls had answered 200.
+   *
    * <p>Dependencies are read in declaration order and the first blocker wins, so a step with two
    * broken predecessors names the earlier one — the same one a person reading the list top to
    * bottom would name.
    */
-  private static String blocker(
-      StepDefinition step, Map<String, RunStatus> statuses, Map<String, String> failureOrigin) {
+  private static String blocker(StepDefinition step, Map<String, String> failureOrigin) {
     for (String dependency : step.dependsOn()) {
-      RunStatus status = statuses.get(dependency);
-      if (status == RunStatus.FAILED || status == RunStatus.SKIPPED) {
-        return failureOrigin.getOrDefault(dependency, dependency);
+      String origin = failureOrigin.get(dependency);
+      if (origin != null) {
+        return origin;
       }
     }
     return null;
@@ -185,7 +198,7 @@ public class RunExecutor {
     try {
       return step.body().run(context);
     } catch (RuntimeException e) {
-      return new StepResult(RunStatus.FAILED, null, null, null, step.id() + " threw: " + e);
+      return new StepResult(RunStatus.FAILED, null, null, null, step.id() + " threw: " + e, null);
     }
   }
 

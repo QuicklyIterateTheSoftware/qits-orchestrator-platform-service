@@ -17,8 +17,10 @@ The contract — routes, step ids, edges, request and response shapes — is pin
 
 ## The gc process
 
-Steps run in declaration order. An edge is a requirement, not an ordering hint: a failed step marks
-every transitive dependent SKIPPED, while independent steps still run.
+Steps run in declaration order. An edge is a requirement, not an ordering hint: a **failed** step
+marks every transitive dependent SKIPPED, while independent steps still run. A step the process
+**chose** not to make — `artifacts.sweep` on a dry run — is a satisfied dependency, not a failure,
+so what comes after it still runs.
 
 | id | target | call | depends on |
 |---|---|---|---|
@@ -53,7 +55,8 @@ largest reclaim of the night. Declaration order still runs it after the image sw
 the image sweep, so an empty keep-set can never reach qits-containers.
 
 **Dry run** still calls every peer — each one plans instead of deleting — so its figures are real
-figures. Only `artifacts.sweep` is skipped outright, because qits-artifacts' sweep has no dry mode.
+figures. Only `artifacts.sweep` is skipped outright, because qits-artifacts' sweep has no dry mode,
+and `usage.after` still runs behind it: that skip is policy, not breakage.
 
 ## API
 
@@ -75,7 +78,10 @@ GET  /runs/{id}                      → the run above, plus
 ```
 
 - `status` is `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED` or `SKIPPED`. A run is only `RUNNING`,
-  `SUCCEEDED` or `FAILED`, and it is `FAILED` if any step is — a skip does not fail it.
+  `SUCCEEDED` or `FAILED`, and it is `FAILED` if any step is — a skip does not fail it. **Two kinds
+  of skip share one status**: `error: "dry run"` is the process choosing not to call, and
+  `error: "skipped: <step> failed"` is the consequence of a failure. Only the second cascades; the
+  `error` text is what tells them apart on the wire.
 - `trigger` is `manual` or `scheduled`.
 - **`request.body` and `response` are STRINGS carrying JSON text**, not embedded objects. A
   response is stored as the bytes that arrived, bounded at 1 MiB with a truncation marker past it —

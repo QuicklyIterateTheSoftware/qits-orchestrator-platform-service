@@ -15,13 +15,39 @@ import java.util.function.Function;
  * @param answer the peer's reply, or null for the same reason
  * @param summary the one human line, or null
  * @param error why it failed or why it was skipped, or null
+ * @param skip why it was skipped, when it was — {@link SkipKind}, and null for every other status.
+ *     It is what decides whether the steps after it still run, and it is deliberately NOT on the
+ *     wire and NOT in a column: it is read once, during the run, by the executor. A reader of a
+ *     finished run has the {@code error} sentence, which says the same thing in words.
  */
 public record StepResult(
-    RunStatus status, PeerCall call, PeerAnswer answer, String summary, String error) {
+    RunStatus status,
+    PeerCall call,
+    PeerAnswer answer,
+    String summary,
+    String error,
+    SkipKind skip) {
 
-  /** A step that never ran, with the reason a person reads: {@code dry run}, {@code skipped: …}. */
+  /**
+   * A step the process chose not to make — a dry run does not sweep.
+   *
+   * <p><b>This does not cascade.</b> A dependent of a policy-skipped step runs normally, because
+   * nothing went wrong: the run did what it was asked. The reason is the wire text, {@code dry
+   * run}.
+   */
   public static StepResult skipped(String reason) {
-    return new StepResult(RunStatus.SKIPPED, null, null, null, reason);
+    return new StepResult(RunStatus.SKIPPED, null, null, null, reason, SkipKind.POLICY);
+  }
+
+  /**
+   * A step whose dependency FAILED, so it could not honestly run.
+   *
+   * <p>The executor's own, not a body's. {@code origin} is the step that actually failed rather
+   * than the skipped neighbour in between — a reader should not have to walk the graph backwards.
+   */
+  public static StepResult skippedByFailure(String origin) {
+    return new StepResult(
+        RunStatus.SKIPPED, null, null, null, "skipped: " + origin + " failed", SkipKind.FAILURE);
   }
 
   /**
@@ -37,7 +63,7 @@ public record StepResult(
   public static StepResult of(PeerExchange exchange, Function<PeerAnswer, String> summary) {
     PeerAnswer answer = exchange.answer();
     if (answer.error() != null) {
-      return new StepResult(RunStatus.FAILED, exchange.call(), answer, null, answer.error());
+      return new StepResult(RunStatus.FAILED, exchange.call(), answer, null, answer.error(), null);
     }
     if (!answer.ok()) {
       return new StepResult(
@@ -45,7 +71,8 @@ public record StepResult(
           exchange.call(),
           answer,
           null,
-          exchange.call().url() + " answered " + answer.httpStatus());
+          exchange.call().url() + " answered " + answer.httpStatus(),
+          null);
     }
     String line;
     try {
@@ -55,6 +82,6 @@ public record StepResult(
       // its shape is a step that SUCCEEDED with an unreadable caption, never a failed deletion.
       line = "answered " + answer.httpStatus() + "; the summary could not be read: " + e;
     }
-    return new StepResult(RunStatus.SUCCEEDED, exchange.call(), answer, line, null);
+    return new StepResult(RunStatus.SUCCEEDED, exchange.call(), answer, line, null, null);
   }
 }
