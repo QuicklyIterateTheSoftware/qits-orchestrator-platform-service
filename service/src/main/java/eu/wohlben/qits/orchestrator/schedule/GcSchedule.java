@@ -38,6 +38,7 @@ public class GcSchedule {
 
   @Scheduled(
       cron = "{qits.orchestrator.gc.cron}",
+      timeZone = "{qits.orchestrator.gc.time-zone}",
       concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
   void onSchedule() {
     if (!config.enabled()) {

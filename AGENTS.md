@@ -186,7 +186,7 @@ a JWKS, and a clone-alone build needs no issuer. There is no third state.
   and would answer every poll from its first-level cache — the run row would look RUNNING forever
   while the worker closed it in another session. In a deployment each poll is a fresh request.
 - **The scheduler is off in the suite** (`quarkus.scheduler.enabled=false`). A cron would fire only
-  at 03:40, and a suite whose outcome depends on the wall clock fails once a year for nobody's
+  at 03:00, and a suite whose outcome depends on the wall clock fails once a year for nobody's
   reason.
 - A `@QuarkusTest` runs under the `test` profile, where qits-auth-core ships a dev user carrying
   `qits:admin` and `qits:system` — so the shipped `@RolesAllowed` pair is exercised rather than
