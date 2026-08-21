@@ -9,10 +9,10 @@ import eu.wohlben.qits.orchestrator.process.StepResult;
 final class StepResultBuilder {
 
   StepResult succeeded(String summary) {
-    return new StepResult(RunStatus.SUCCEEDED, null, null, summary, null);
+    return new StepResult(RunStatus.SUCCEEDED, null, null, summary, null, null);
   }
 
   StepResult failed(String error) {
-    return new StepResult(RunStatus.FAILED, null, null, null, error);
+    return new StepResult(RunStatus.FAILED, null, null, null, error, null);
   }
 }

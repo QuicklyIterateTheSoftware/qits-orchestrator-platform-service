@@ -63,13 +63,27 @@ opening transaction — a person and the cron arriving together is the ordinary 
 worth losing.
 
 **Steps run in declaration order; the edges decide only what a failure skips.** A step whose
-dependencies all succeeded runs when the list reaches it, so a process reads top to bottom. A
-failed step marks every transitive dependent SKIPPED, and the error names the step that actually
-FAILED rather than the skipped neighbour in between — a reader should not have to walk the graph
-backwards. Independent steps still run: a night where one broken peer stopped every unrelated
-reclaim would be a night of no reclaim for no reason.
+dependencies did not fail runs when the list reaches it, so a process reads top to bottom. A failed
+step marks every transitive dependent SKIPPED, and the error names the step that actually FAILED
+rather than the skipped neighbour in between — a reader should not have to walk the graph backwards.
+Independent steps still run: a night where one broken peer stopped every unrelated reclaim would be
+a night of no reclaim for no reason.
 
-**A SKIPPED step does not fail a run.** A skip is the consequence of a failure already counted.
+**Two kinds of skip, and only one of them is contagious.** `SkipKind.POLICY` is the process choosing
+not to call — a dry run does not sweep — and it is a SATISFIED dependency: what comes after it runs.
+`SkipKind.FAILURE` is the executor's own, written when a dependency failed, and it cascades. Both go
+out as `status: SKIPPED` with a sentence in `error`; the kind is read once, during the run, and is
+deliberately neither on the wire nor in a column. `blocker()` consults exactly one map — a step is
+in it when it FAILED or was FAILURE-skipped, and absent otherwise.
+
+This was measured, not designed: the platform's first real dry run answered 200 to all nine calls
+and still reported `usage.after` as `skipped: artifacts.sweep failed`, because the executor read
+every non-SUCCEEDED dependency as broken. A green run that reads as broken is worse than a red one.
+**A new policy skip returns `StepResult.skipped(reason)`; nothing but the executor may produce a
+failure skip.**
+
+**A SKIPPED step does not fail a run.** A skip is either the consequence of a failure already
+counted, or not a failure at all.
 
 **`execute` never throws.** A thrown exception on the worker would leave a RUNNING row nothing can
 close, and no second run of that kind would ever be allowed again.

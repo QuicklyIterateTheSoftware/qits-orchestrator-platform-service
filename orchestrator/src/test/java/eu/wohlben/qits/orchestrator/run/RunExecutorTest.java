@@ -147,6 +147,33 @@ class RunExecutorTest {
   }
 
   @Test
+  void aStepTheProcessChoseNotToMakeDoesNotSkipWhatComesAfterIt() {
+    // The shape of a dry run: the step that would delete is skipped by POLICY, and the step that
+    // measures afterwards depends on it.
+    ProbeProcess.script =
+        List.of(
+            ProbeProcess.succeeding("before"),
+            ProbeProcess.policySkipping("deleting", "before"),
+            ProbeProcess.succeeding("after", "deleting"),
+            ProbeProcess.succeeding("downstream", "after"));
+
+    UUID id = executor.start(ProbeProcess.KIND, RunTrigger.MANUAL, false);
+    OpRun run = awaitClosed(id);
+
+    // MEASURED LIVE: the platform's first real dry run answered 200 to all nine calls and still
+    // reported its last step as "skipped: artifacts.sweep failed". A policy skip is the run doing
+    // what it was asked, so nothing after it has a reason not to run.
+    assertEquals(RunStatus.SUCCEEDED.name(), run.status);
+
+    Map<String, OpStep> steps = stepsOf(id);
+    assertEquals(RunStatus.SKIPPED.name(), steps.get("deleting").status);
+    assertEquals("dry run", steps.get("deleting").error);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("after").status);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("downstream").status);
+    assertNull(steps.get("after").error);
+  }
+
+  @Test
   void aSecondRunOfTheSameKindIsRefusedWhileOneIsActive() {
     // A step that never returns until the test lets it, so the first run is provably still RUNNING
     // when the second is attempted.
