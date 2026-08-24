@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
  *
  * <ul>
  *   <li>the build-time route prefixes — {@code /orchestrator/api} and {@code /orchestrator/q} —
- *       which qits-gateway routes verbatim and no unprefixed form falls back to;
+ *       which the edge path-routes verbatim on every host and no unprefixed form falls back to;
  *   <li>the shipped datasource <b>expression</b>: the launched process is handed {@code
  *       QITS_RESOURCE_DB_*}, the generic contract a deployment supplies, rather than the datasource
  *       keys, so the jar's own {@code ${…}} indirection is what is under test;
@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test;
  *       started run is exactly such a response;
  *   <li><b>the client is served, and does not swallow the API.</b> Quinoa is disabled by default in
  *       test mode, so no {@code @QuarkusTest} builds or serves the SPA and every assertion about
- *       {@code /orchestrator/} would pass against a process with no client in it.
+ *       {@code /} would pass against a process with no client in it.
  * </ul>
  *
  * <p><b>This is also the only place the identity contract is real.</b> A {@code @QuarkusTest} runs
@@ -71,9 +71,10 @@ public class PackagedSurfaceIT {
    * The one string that identifies a response as the CLIENT's index.html rather than anything else
    * this process serves. It is also the string that has to agree with {@code
    * quarkus.quinoa.ui-root-path} here and with {@code baseHref} in qits-platform-spa-orchestrator's
-   * angular.json, so the probes below double as the check that all three still do.
+   * angular.json, so the probes below double as the check that all three still do. Both are the ROOT
+   * now: this service has a host of its own and serves its client there.
    */
-  private static final String BASE_HREF = "<base href=\"/orchestrator/\">";
+  private static final String BASE_HREF = "<base href=\"/\">";
 
   /**
    * Hands the launched artifact a database the way a deployment does — as the generic resource
@@ -174,11 +175,18 @@ public class PackagedSurfaceIT {
   }
 
   @Test
-  public void theRoutesAreWhereTheGatewayRoutesThemAndAMistypedOneIsNever200() {
+  public void theMachineRoutesAreUnderTheSegmentAndAMistypedOneAnswersNoData() {
     asAdmin().when().get("/orchestrator/api/processes").then().statusCode(200);
 
-    // qits-gateway routes verbatim by prefix, so there is no unprefixed form to fall back to.
-    asAdmin().when().get("/api/processes").then().statusCode(404);
+    // The edge path-routes verbatim, so there is no unprefixed form to fall back to. The client sits
+    // at the root now, so an unprefixed path is inside the SPA fallback's reach and comes back as
+    // the page rather than as a 404 — which is right: /api belongs to no machine surface here.
+    asAdmin()
+        .when()
+        .get("/api/processes")
+        .then()
+        .statusCode(200)
+        .body(Matchers.containsString(BASE_HREF));
 
     String body =
         asAdmin().when().get("/orchestrator/api/nope").then().statusCode(404).extract().asString();
@@ -186,8 +194,8 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * The client is mounted, and its {@code <base href>} agrees with where it is mounted. The two are
-   * configured in different repositories — {@code quarkus.quinoa.ui-root-path} here, {@code
+   * The client is mounted at the root, and its {@code <base href>} agrees with where it is mounted.
+   * The two are configured in different repositories — {@code quarkus.quinoa.ui-root-path} here, {@code
    * baseHref} in qits-platform-spa-orchestrator's angular.json — and a disagreement serves a page
    * that loads and then fetches its own JavaScript from a path that 404s. Nothing on this side
    * notices, which is why the string is asserted rather than the status alone.
@@ -198,10 +206,10 @@ public class PackagedSurfaceIT {
    * here is a static bundle with no configuration in it.
    */
   @Test
-  public void theClientIsServedAtTheSegmentWithABaseHrefThatMatches() {
+  public void theClientIsServedAtTheRootWithABaseHrefThatMatches() {
     given()
         .when()
-        .get("/orchestrator/")
+        .get("/")
         .then()
         .statusCode(200)
         .contentType(ContentType.HTML)
@@ -209,15 +217,15 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * A deep link is the SPA fallback doing its job: {@code /orchestrator/processes/gc} has no file
-   * behind it, and {@code enable-spa-routing} is what makes a reload or a pasted link reach the
-   * Angular router instead of a 404. An operator shares exactly these addresses.
+   * A deep link is the SPA fallback doing its job: {@code /processes/gc} has no file behind it, and
+   * {@code enable-spa-routing} is what makes a reload or a pasted link reach the Angular router
+   * instead of a 404. An operator shares exactly these addresses.
    */
   @Test
   public void aDeepLinkFallsBackToTheClientSoTheAngularRouterOwnsIt() {
     given()
         .when()
-        .get("/orchestrator/processes/gc")
+        .get("/processes/gc")
         .then()
         .statusCode(200)
         .contentType(ContentType.HTML)
@@ -225,9 +233,10 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * THE HALF THAT COSTS SOMETHING IF IT IS WRONG. The SPA fallback is a late-order catch-all, so a
-   * path under {@code /orchestrator} that matches no route is rerouted to index.html and answers
-   * {@code 200 text/html} — unless {@code quarkus.quinoa.ignored-path-prefixes} claims it first.
+   * THE HALF THAT COSTS SOMETHING IF IT IS WRONG. The SPA fallback is a late-order catch-all over
+   * the WHOLE root now, so any path that matches no route is rerouted to index.html and answers
+   * {@code 200 text/html} — unless {@code quarkus.quinoa.ignored-path-prefixes} claims it first. Its
+   * one entry, {@code /orchestrator}, covers both machine prefixes: matching is by path segment.
    *
    * <p>The stake here is the client's own polling: {@code GET /orchestrator/api/runs/<id>} every two
    * seconds, which would hand a JSON parser an HTML document.
@@ -257,15 +266,28 @@ public class PackagedSurfaceIT {
   }
 
   /**
-   * A KNOWN WART, PINNED RATHER THAN FIXED. Quinoa mounts the client at {@code ui-root-path + "*"} —
-   * {@code /orchestrator/*} — which does not match the bare segment, so {@code /orchestrator}
-   * without the trailing slash is a 404 while {@code /orchestrator/} is the page (upstream quinoa
-   * issue #960). It affects every client on the platform identically and a redirect would be a
-   * gateway-level decision, so it is deliberately not solved per-service.
+   * THE BARE SEGMENT IS A MACHINE PATH AND ANSWERS LIKE ONE. {@code /orchestrator} is claimed by
+   * {@code ignored-path-prefixes}, so it never becomes the page; it belongs to no route either, so it
+   * is a 404. The old trailing-slash wart went with the move to the root — {@code /} is the client
+   * now, and there is no bare segment left for a reader to mistype.
    */
   @Test
-  public void theBareSegmentWithNoTrailingSlashIsStillA404() {
-    given().when().get("/orchestrator").then().statusCode(404);
+  public void theBareSegmentIsAMachinePathAndIsA404NeverThePage() {
+    given()
+        .when()
+        .get("/orchestrator")
+        .then()
+        .statusCode(404)
+        .body(Matchers.not(Matchers.containsString(BASE_HREF)));
+
+    // The old client address, which nothing serves any more. It is claimed by the same entry, so a
+    // stale bookmark gets a 404 rather than a page that would then fetch its assets from /.
+    given()
+        .when()
+        .get("/orchestrator/")
+        .then()
+        .statusCode(404)
+        .body(Matchers.not(Matchers.containsString(BASE_HREF)));
   }
 
   @Test

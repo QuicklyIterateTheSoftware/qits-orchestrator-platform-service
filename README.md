@@ -93,7 +93,9 @@ GET  /runs/{id}                      → the run above, plus
   polls `GET /runs/{id}` every two seconds while it is `RUNNING`.
 
 The document is at `/orchestrator/q/openapi`, the browsable UI at `/orchestrator/q/swagger-ui`, and
-readiness at `/orchestrator/q/health/ready`. The client is served at `/orchestrator/`.
+readiness at `/orchestrator/q/health/ready`. **The client is served at `/` on this service's own
+host, `orchestrator.<env>.<domain>`.** The machine surface keeps its segment and is path-routed on
+every host, so the client's same-origin calls to `/orchestrator/api/...` are unchanged.
 
 ## Configuration
 
