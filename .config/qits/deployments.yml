@@ -12,15 +12,19 @@
 # instance would mean two schedules pruning one docker daemon.
 deployment_target: platform
 
-# One route for the whole segment: the client at /orchestrator/, the API at /orchestrator/api and
-# the document at /orchestrator/q. qits-gateway routes verbatim by prefix, so this one line reaches
-# all three.
+# One route for this application's machine surface: the API at /orchestrator/api and the document at
+# /orchestrator/q. The edge path-routes every application's route prefix on EVERY host, so this one
+# line keeps both reachable wherever a reader is. The client itself is no longer under it — it is
+# served at / on this application's own host.
 routes: /orchestrator
 
-# The left-navigation entry, and the number is its position. 12 puts it after Configuration:11 at
-# the end of the platform block the operator screens form — Githost:9, Mirror:10, Configuration:11 —
-# rather than among the per-project doors.
-navigation: Orchestrator:12
+# WHERE THIS APPLICATION HANGS IN THE SIDEBAR. `system` is the global group — what this service
+# shows is the platform's own housekeeping rather than one project's work — and 3 is the position
+# inside it, after Mirror:2.
+#
+# The host is not spelled because the derived one is already right: the application name minus its
+# `qits-platform-` prefix is `orchestrator`, which is the label this service is served on.
+navigation-entries: system.Orchestrator:3
 
 # THE STORE, DECLARED RATHER THAN CONFIGURED. The line below is what provisions it: a role and a
 # database of its own on the tier's postgres, created before the successor container starts and
