@@ -32,6 +32,8 @@ so what comes after it still runs.
 | `containers.images` | containers | `POST /containers/api/gc/images` | pins.deployments |
 | `containers.volumes` | containers | `POST /containers/api/gc/volumes` | usage.before |
 | `containers.build-cache` | containers | `POST /containers/api/gc/build-cache` | usage.before |
+| `repos.catalogue` | projects | `GET /projects/api/repositories` | — |
+| `branches.sweep` | workspaces | `POST /workspaces/api/gc/branches {dryRun, repositories, keepPrefixes}` | repos.catalogue |
 | `usage.after` | containers | `GET /containers/api/gc/usage` | artifacts.sweep, containers.images, containers.volumes, containers.build-cache |
 
 **The pins are read once and handed on.** `artifacts.plan` and `artifacts.sweep` send
@@ -53,6 +55,15 @@ largest reclaim of the night. Declaration order still runs it after the image sw
 **The image keep-set** is every deployment pin as a local tag, `qits/<applicationName>:<sha>`, plus
 `qits.orchestrator.gc.image-keep-prefixes`. Fail-closed is the edge: a pin read that failed skips
 the image sweep, so an empty keep-set can never reach qits-containers.
+
+**The branch sweep is the same pin pattern, one store further out.** The repository catalogue is
+the sweep's iteration set, read here because this component holds the credential, and handed to
+qits-workspaces — which owns branch semantics and refuses on its own authority: the main branch,
+`environment/*` and anything an active workspace stands on are never candidates, whatever the
+request says. `qits.orchestrator.gc.branch-keep-prefixes` can only widen that. A failed catalogue
+read skips the sweep; `usage.after` does not wait for it, because deleted refs free no docker disk.
+Unlike the registry sweep, the branch sweep runs on a dry run too — qits-workspaces judges
+identically and deletes nothing, so the dry figures are real figures.
 
 **Dry run** still calls every peer — each one plans instead of deleting — so its figures are real
 figures. Only `artifacts.sweep` is skipped outright, because qits-artifacts' sweep has no dry mode,
@@ -108,11 +119,14 @@ and overridable by environment without a rebuild.
 | `qits.orchestrator.targets.containers-url` | `http://qits-containers:8080` | where qits-containers is |
 | `qits.orchestrator.targets.ci-url` | `http://qits-ci:8080` | where qits-ci is |
 | `qits.orchestrator.targets.deployments-url` | `http://qits-platform-deployments:8080` | where the deployer is |
+| `qits.orchestrator.targets.projects-url` | `http://qits-projects:8080` | where the repository catalogue is |
+| `qits.orchestrator.targets.workspaces-url` | `http://qits-workspaces:8080` | where branch semantics live |
 | `qits.orchestrator.gc.enabled` | `true` | whether the CLOCK may start a run |
 | `qits.orchestrator.gc.cron` | `0 0 3 * * ?` | when it does: 03:00 every day |
 | `qits.orchestrator.gc.time-zone` | `UTC` | the zone the cron is read in (the platform's convention) |
 | `qits.orchestrator.gc.dry-run` | `false` | whether the SCHEDULED run may delete |
 | `qits.orchestrator.gc.image-keep-prefixes` | `qits/build-images/,qits/graalvmce-musl-builder` | tag prefixes no rule may condemn |
+| `qits.orchestrator.gc.branch-keep-prefixes` | `environment/` | branch prefixes the merged-branch sweep may never condemn (additive to qits-workspaces' own refusals) |
 | `qits.orchestrator.gc.image-min-age` | `PT6H` | the build-then-push grace for an image |
 | `qits.orchestrator.gc.volume-min-age` | `PT24H` | the stop-then-start grace for a volume |
 | `qits.orchestrator.gc.build-cache-keep-bytes` | `10737418240` | what the HOST buildkit cache may keep after a prune |

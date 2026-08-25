@@ -34,6 +34,37 @@ final class GcSummaries {
         + bytes(cache.path("sizeBytes").asLong());
   }
 
+  /** {@code 51 repositories in the catalogue} — the iteration set of the branch sweep. */
+  static String repositoryCatalogue(JsonNode body) {
+    int repositories = body == null ? 0 : body.path("repositories").size();
+    return repositories
+        + (repositories == 1 ? " repository" : " repositories")
+        + " in the catalogue";
+  }
+
+  /**
+   * {@code removed 3 of 214 branches across 51 repositories (dry run), 1 error} — the sweep's own
+   * count of what it deleted, or on a dry run would have.
+   */
+  static String branchesSweep(JsonNode body) {
+    if (body == null) {
+      return "no sweep report in the answer";
+    }
+    int removed = body.path("removed").size();
+    int examined = body.path("branchesExamined").asInt();
+    int repositories = body.path("repositoriesExamined").asInt();
+    int errors = body.path("errors").size();
+    return "removed "
+        + removed
+        + " of "
+        + examined
+        + " branches across "
+        + repositories
+        + " repositories"
+        + (body.path("dryRun").asBoolean() ? " (dry run)" : "")
+        + (errors == 0 ? "" : ", " + errors + (errors == 1 ? " error" : " errors"));
+  }
+
   /** {@code 14 applications pinned} — the deployments pin answer. */
   static String deploymentPins(JsonNode body) {
     int applications = body == null ? 0 : body.path("pins").size();
