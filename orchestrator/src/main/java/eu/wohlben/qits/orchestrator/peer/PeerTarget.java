@@ -1,7 +1,7 @@
 package eu.wohlben.qits.orchestrator.peer;
 
 /**
- * The four peers, by their wire name.
+ * The six peers, by their wire name.
  *
  * <p>Constants rather than an enum because the same string is three things at once: the value a
  * step reports as its {@code target}, the middle of the config key {@code
@@ -21,6 +21,12 @@ public final class PeerTarget {
 
   /** qits-platform-deployments — the image shas a restart or a rollback would pull. */
   public static final String DEPLOYMENTS = "deployments";
+
+  /** qits-projects — the repository catalogue the branch sweep runs over. */
+  public static final String PROJECTS = "projects";
+
+  /** qits-workspaces — branch semantics and the merged-branch sweep. */
+  public static final String WORKSPACES = "workspaces";
 
   private PeerTarget() {}
 }

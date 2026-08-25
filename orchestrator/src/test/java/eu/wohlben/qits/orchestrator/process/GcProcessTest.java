@@ -26,7 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The gc process against faked peers: the nine steps, the bodies they send, the summaries they read
+ * The gc process against faked peers: the eleven steps, the bodies they send, the summaries they read
  * back, and what a broken pin read does.
  *
  * <p>The peers are {@link FakePeers}, an {@code @Alternative} over {@code PeerClient}'s two call
@@ -46,6 +46,8 @@ class GcProcessTest {
   private static final String IMAGES = "/containers/api/gc/images";
   private static final String VOLUMES = "/containers/api/gc/volumes";
   private static final String BUILD_CACHE = "/containers/api/gc/build-cache";
+  private static final String CATALOGUE = "/projects/api/repositories";
+  private static final String BRANCHES = "/workspaces/api/gc/branches";
 
   @Inject RunExecutor executor;
 
@@ -121,6 +123,21 @@ class GcProcessTest {
              "builders":[{"container":"buildx_buildkit_x0","reclaimedBytes":3100000000,
                           "detail":"…","error":null}]}
             """));
+    peers.answer(
+        CATALOGUE,
+        FakePeers.Scripted.ok(
+            """
+            {"repositories":[{"id":"r-1","projectId":"p-1","name":"qits-ci","mainBranch":"main"},
+                             {"id":"r-2","projectId":"p-1","name":"qits-docs","mainBranch":"main"}]}
+            """));
+    peers.answer(
+        BRANCHES,
+        FakePeers.Scripted.ok(
+            """
+            {"dryRun":false,"repositoriesExamined":2,"branchesExamined":9,
+             "removed":[{"repositoryId":"r-1","repositoryName":"qits-ci","branch":"old-work"}],
+             "errors":[]}
+            """));
   }
 
   /**
@@ -177,7 +194,7 @@ class GcProcessTest {
   }
 
   @Test
-  void aHealthyPlatformRunsAllNineStepsAndSummarisesEachFromTheAnswer() {
+  void aHealthyPlatformRunsAllElevenStepsAndSummarisesEachFromTheAnswer() {
     UUID id = executor.start("gc", RunTrigger.MANUAL, false);
     OpRun run = awaitClosed(id);
 
@@ -194,6 +211,8 @@ class GcProcessTest {
             "containers.images",
             "containers.volumes",
             "containers.build-cache",
+            "repos.catalogue",
+            "branches.sweep",
             "usage.after"),
         runs.steps(id).stream().map(step -> step.stepId).toList());
     steps.values().forEach(step -> assertEquals(RunStatus.SUCCEEDED.name(), step.status, step.stepId));
@@ -212,6 +231,9 @@ class GcProcessTest {
     assertEquals(
         "host 12.6 GB reclaimed, 1 builder 3.1 GB reclaimed",
         steps.get("containers.build-cache").summary);
+    assertEquals("2 repositories in the catalogue", steps.get("repos.catalogue").summary);
+    assertEquals(
+        "removed 1 of 9 branches across 2 repositories", steps.get("branches.sweep").summary);
 
     // The url is the shipped target plus the shipped path — a wrong peer would fail here.
     assertEquals(
@@ -282,6 +304,13 @@ class GcProcessTest {
     assertTrue(json(peers.bodiesFor(IMAGES).getFirst()).get("dryRun").asBoolean());
     assertTrue(json(peers.bodiesFor(VOLUMES).getFirst()).get("dryRun").asBoolean());
     assertTrue(json(peers.bodiesFor(BUILD_CACHE).getFirst()).get("dryRun").asBoolean());
+    // THE BRANCH SWEEP IS NOT WITHHELD: qits-workspaces has a real dry mode, so the flag travels
+    // in the body and the projection carries exactly the fields the sweep judges by.
+    JsonNode branches = json(peers.bodiesFor(BRANCHES).getFirst());
+    assertTrue(branches.get("dryRun").asBoolean());
+    assertEquals("r-1", branches.get("repositories").get(0).get("id").asText());
+    assertEquals("main", branches.get("repositories").get(0).get("mainBranch").asText());
+    assertEquals(List.of("environment/"), texts(branches.get("keepPrefixes")));
     // AND THE MEASUREMENT STILL HAPPENS. usage.after depends on the sweep, but a POLICY skip is
     // not a failure: the run did exactly what it was asked, so nothing after it has a reason not to
     // run. The live dry run that reported "skipped: artifacts.sweep failed" here — with all nine

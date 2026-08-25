@@ -51,8 +51,17 @@ import java.util.List;
  * containers.images   containers   POST /containers/api/gc/images          ← pins.deployments
  * containers.volumes  containers   POST /containers/api/gc/volumes         ← usage.before
  * containers.build-cache containers POST /containers/api/gc/build-cache    ← usage.before
- * usage.after         containers   GET  /containers/api/gc/usage           ← everything that deletes
+ * repos.catalogue     projects     GET  /projects/api/repositories
+ * branches.sweep      workspaces   POST /workspaces/api/gc/branches        ← repos.catalogue
+ * usage.after         containers   GET  /containers/api/gc/usage           ← everything that frees disk
  * </pre>
+
+ * <p><b>The branch sweep is the same pin pattern, one store further out.</b> The repository
+ * catalogue is its keep-set's complement — the iteration set — read here for the same reason the
+ * pins are, and handed to qits-workspaces, which owns branch semantics: what a branch's parent is,
+ * whether a workspace stands on it, and the single cleanup criterion every UI click already goes
+ * through. A failed catalogue read skips the sweep (nothing deletes over a list it could not
+ * read); {@code usage.after} does not wait for it, because deleted refs free no docker disk.
  *
  * <p>{@code usage.before} and {@code usage.after} are the same call twice, and the pair is the
  * point: the run's own measurement of what it achieved, taken by the component that owns the store
@@ -72,6 +81,8 @@ public class GcProcess implements TechnicalProcess {
   static final String CONTAINERS_IMAGES = "containers.images";
   static final String CONTAINERS_VOLUMES = "containers.volumes";
   static final String CONTAINERS_BUILD_CACHE = "containers.build-cache";
+  static final String REPOS_CATALOGUE = "repos.catalogue";
+  static final String BRANCHES_SWEEP = "branches.sweep";
   static final String USAGE_AFTER = "usage.after";
 
   private static final String USAGE_PATH = "/containers/api/gc/usage";
@@ -196,6 +207,29 @@ public class GcProcess implements TechnicalProcess {
                             buildCacheBody(context)),
                     answer -> GcSummaries.buildCache(answer.json()))),
         new StepDefinition(
+            REPOS_CATALOGUE,
+            "Repository catalogue",
+            PeerTarget.PROJECTS,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.PROJECTS, "/projects/api/repositories"),
+                    answer -> GcSummaries.repositoryCatalogue(answer.json()))),
+        new StepDefinition(
+            BRANCHES_SWEEP,
+            "Sweep merged branches",
+            PeerTarget.WORKSPACES,
+            List.of(REPOS_CATALOGUE),
+            context ->
+                StepResult.of(
+                    context
+                        .peers()
+                        .post(
+                            PeerTarget.WORKSPACES,
+                            "/workspaces/api/gc/branches",
+                            branchesBody(context)),
+                    answer -> GcSummaries.branchesSweep(answer.json()))),
+        new StepDefinition(
             USAGE_AFTER,
             "Disk usage after",
             PeerTarget.CONTAINERS,
@@ -274,6 +308,43 @@ public class GcProcess implements TechnicalProcess {
     body.set("keep", keep);
     ArrayNode prefixes = JSON.createArrayNode();
     config.imageKeepPrefixes().forEach(prefixes::add);
+    body.set("keepPrefixes", prefixes);
+    return body.toString();
+  }
+
+  /**
+   * The branch sweep request:
+   *
+   * <pre>{@code {"dryRun":…, "repositories":[{"id","name","mainBranch"}…], "keepPrefixes":[…]}}</pre>
+   *
+   * <p><b>A projection this time, not the verbatim document</b> — the request shape belongs to
+   * qits-workspaces' own contract ({@code SweepRepository}), so the catalogue rows are respelled
+   * into it rather than re-embedded; the three fields are exactly what the sweep judges by. Unlike
+   * the artifacts sweep, this one runs on a dry run too: qits-workspaces judges identically and
+   * deletes nothing, so the nightly dry figures are real figures.
+   */
+  private String branchesBody(RunContext context) {
+    ArrayNode repositories = JSON.createArrayNode();
+    context
+        .answer(REPOS_CATALOGUE)
+        .ifPresent(
+            answer -> {
+              for (JsonNode row : answer.path("repositories")) {
+                String id = row.path("id").asText(null);
+                if (id == null || id.isBlank()) {
+                  continue;
+                }
+                ObjectNode repository = repositories.addObject();
+                repository.put("id", id);
+                repository.put("name", row.path("name").asText(""));
+                repository.put("mainBranch", row.path("mainBranch").asText(""));
+              }
+            });
+    ObjectNode body = JSON.createObjectNode();
+    body.put("dryRun", context.dryRun());
+    body.set("repositories", repositories);
+    ArrayNode prefixes = JSON.createArrayNode();
+    config.branchKeepPrefixes().forEach(prefixes::add);
     body.set("keepPrefixes", prefixes);
     return body.toString();
   }

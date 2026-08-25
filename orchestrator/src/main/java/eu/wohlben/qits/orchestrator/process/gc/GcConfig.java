@@ -26,6 +26,9 @@ public class GcConfig {
   @ConfigProperty(name = "qits.orchestrator.gc.image-keep-prefixes")
   List<String> imageKeepPrefixes;
 
+  @ConfigProperty(name = "qits.orchestrator.gc.branch-keep-prefixes")
+  List<String> branchKeepPrefixes;
+
   @ConfigProperty(name = "qits.orchestrator.gc.image-min-age")
   Duration imageMinAge;
 
@@ -51,6 +54,15 @@ public class GcConfig {
   /** Image tag prefixes qits-containers must keep whatever its own rules say. */
   public List<String> imageKeepPrefixes() {
     return List.copyOf(imageKeepPrefixes);
+  }
+
+  /**
+   * Branch prefixes the merged-branch sweep may never condemn. Additive to qits-workspaces' own
+   * hard refusals (the main branch, {@code environment/*}, workspace-backed branches) — this key
+   * can widen the protection and never narrow it.
+   */
+  public List<String> branchKeepPrefixes() {
+    return List.copyOf(branchKeepPrefixes);
   }
 
   /** How young an image is protected from the age rule — the build-then-push window. */

@@ -58,6 +58,12 @@ public class PeerClient {
   @ConfigProperty(name = "qits.orchestrator.targets.deployments-url")
   String deploymentsUrl;
 
+  @ConfigProperty(name = "qits.orchestrator.targets.projects-url")
+  String projectsUrl;
+
+  @ConfigProperty(name = "qits.orchestrator.targets.workspaces-url")
+  String workspacesUrl;
+
   @ConfigProperty(name = "qits.orchestrator.gc.call-timeout")
   Duration callTimeout;
 
@@ -129,6 +135,8 @@ public class PeerClient {
       case PeerTarget.CONTAINERS -> containersUrl;
       case PeerTarget.CI -> ciUrl;
       case PeerTarget.DEPLOYMENTS -> deploymentsUrl;
+      case PeerTarget.PROJECTS -> projectsUrl;
+      case PeerTarget.WORKSPACES -> workspacesUrl;
       default -> throw new IllegalArgumentException("no such peer: " + target);
     };
   }

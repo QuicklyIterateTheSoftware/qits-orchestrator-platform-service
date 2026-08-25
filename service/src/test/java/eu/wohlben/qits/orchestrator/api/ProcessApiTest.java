@@ -60,6 +60,17 @@ class ProcessApiTest {
     peers.answer(
         "/containers/api/gc/build-cache",
         FakePeers.Scripted.ok("{\"host\":{\"reclaimedBytes\":0},\"builders\":[]}"));
+    peers.answer(
+        "/projects/api/repositories",
+        FakePeers.Scripted.ok(
+            "{\"repositories\":[{\"id\":\"r-1\",\"projectId\":\"p-1\",\"name\":\"qits-ci\","
+                + "\"mainBranch\":\"main\"}]}"));
+    peers.answer(
+        "/workspaces/api/gc/branches",
+        FakePeers.Scripted.ok(
+            "{\"dryRun\":false,\"repositoriesExamined\":1,\"branchesExamined\":4,"
+                + "\"removed\":[{\"repositoryId\":\"r-1\",\"repositoryName\":\"qits-ci\","
+                + "\"branch\":\"old-work\"}],\"errors\":[]}"));
   }
 
   /** Starts a run and returns its id. */
@@ -105,14 +116,19 @@ class ProcessApiTest {
         .body("kind", hasItem("gc"))
         .body("find { it.kind == 'gc' }.name", equalTo("Garbage collection"))
         .body("find { it.kind == 'gc' }.description", notNullValue())
-        .body("find { it.kind == 'gc' }.steps.size()", equalTo(9))
+        .body("find { it.kind == 'gc' }.steps.size()", equalTo(11))
         .body("find { it.kind == 'gc' }.steps[0].id", equalTo("usage.before"))
         .body("find { it.kind == 'gc' }.steps[0].target", equalTo("containers"))
         .body("find { it.kind == 'gc' }.steps[0].dependsOn", equalTo(java.util.List.of()))
         .body("find { it.kind == 'gc' }.steps[3].id", equalTo("artifacts.plan"))
         .body(
             "find { it.kind == 'gc' }.steps[3].dependsOn",
-            contains("pins.deployments", "pins.ci"));
+            contains("pins.deployments", "pins.ci"))
+        .body("find { it.kind == 'gc' }.steps[8].id", equalTo("repos.catalogue"))
+        .body("find { it.kind == 'gc' }.steps[8].target", equalTo("projects"))
+        .body("find { it.kind == 'gc' }.steps[9].id", equalTo("branches.sweep"))
+        .body("find { it.kind == 'gc' }.steps[9].target", equalTo("workspaces"))
+        .body("find { it.kind == 'gc' }.steps[9].dependsOn", contains("repos.catalogue"));
   }
 
   @Test
@@ -148,7 +164,7 @@ class ProcessApiTest {
         .body("id", equalTo(id))
         .body("kind", equalTo("gc"))
         .body("dryRun", equalTo(true))
-        .body("steps.size()", equalTo(9))
+        .body("steps.size()", equalTo(11))
         .body("steps[0].id", equalTo("usage.before"))
         .body("steps[0].name", equalTo("Disk usage before"))
         .body("steps[0].target", equalTo("containers"))
@@ -163,12 +179,21 @@ class ProcessApiTest {
         .body("steps[0].response", containsString("\"sizeBytes\""))
         .body("steps[0].error", nullValue())
         .body("steps[0].summary", notNullValue())
-        // The sweep is the step a dry run does not make.
+        // The registry sweep is the step a dry run does not make…
         .body("steps[4].id", equalTo("artifacts.sweep"))
         .body("steps[4].status", equalTo("SKIPPED"))
         .body("steps[4].error", equalTo("dry run"))
         .body("steps[4].request", nullValue())
-        .body("steps[4].dependsOn", contains("artifacts.plan"));
+        .body("steps[4].dependsOn", contains("artifacts.plan"))
+        // …while the branch sweep runs on a dry run too — qits-workspaces judges identically and
+        // deletes nothing, so the request carries the flag rather than being withheld.
+        .body("steps[9].id", equalTo("branches.sweep"))
+        .body("steps[9].status", equalTo("SUCCEEDED"))
+        .body("steps[9].request.method", equalTo("POST"))
+        .body("steps[9].request.body", containsString("\"dryRun\":true"))
+        .body("steps[9].request.body", containsString("\"mainBranch\":\"main\""))
+        .body("steps[9].request.body", containsString("environment/"))
+        .body("steps[9].summary", containsString("removed 1 of 4 branches"));
   }
 
   @Test
