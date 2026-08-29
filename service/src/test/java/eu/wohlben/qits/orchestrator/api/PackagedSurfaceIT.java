@@ -99,6 +99,11 @@ public class PackagedSurfaceIT {
           "qits.orchestrator.targets.containers-url", dead,
           "qits.orchestrator.targets.ci-url", dead,
           "qits.orchestrator.targets.deployments-url", dead,
+          // projects and workspaces are the merged-branch sweep's two peers (2026-08-25). They
+          // belong on the dead port with the other four, or "every peer fails" is only true by
+          // accident of the shipped defaults not resolving in the step container.
+          "qits.orchestrator.targets.projects-url", dead,
+          "qits.orchestrator.targets.workspaces-url", dead,
           // The clock must not start a run beside the one this IT starts itself.
           "quarkus.scheduler.enabled", "false");
     }
@@ -156,7 +161,11 @@ public class PackagedSurfaceIT {
         .get("/orchestrator/api/runs/" + id)
         .then()
         .statusCode(200)
-        .body("steps.size()", Matchers.equalTo(9))
+        // The whole gc plan, one row per StepDefinition in GcProcess.steps() — eleven since the
+        // merged-branch sweep added its two peers (2026-08-25), the same count ProcessApiTest and
+        // the userflow IT pin. Step 0 is the first peer read and fails against a dead port; step 3
+        // (the registry plan) depends on the two pin reads and is skipped fail-closed when they do.
+        .body("steps.size()", Matchers.equalTo(11))
         .body("steps[0].status", Matchers.equalTo("FAILED"))
         .body("steps[0].error", Matchers.containsString("could not be called"))
         .body("steps[3].status", Matchers.equalTo("SKIPPED"))
@@ -166,7 +175,7 @@ public class PackagedSurfaceIT {
     // out of the postgres this JVM handed the process through ${QITS_RESOURCE_DB_URL}. That is the
     // whole claim: the shipped expression resolved, and Flyway's migration survived as a classpath
     // resource — exactly the shape a native image drops.
-    assertTrue(stepRows(id) == 9, "the packaged process must have written its steps");
+    assertTrue(stepRows(id) == 11, "the packaged process must have written its steps");
   }
 
   @Test
