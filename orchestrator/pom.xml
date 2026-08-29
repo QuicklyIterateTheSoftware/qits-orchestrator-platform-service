@@ -103,8 +103,8 @@
         <dependency>
             <!-- Named per architecture on purpose: the binaries are separate artifacts and zonky
                  picks one at run time, so an unnamed arch fails in the middle of a suite rather
-                 than during resolution. These three are what this platform is built and developed
-                 on. -->
+                 than during resolution. Three are what this platform is built and developed on;
+                 the fourth is CI's. -->
             <groupId>io.zonky.test.postgres</groupId>
             <artifactId>embedded-postgres-binaries-linux-amd64</artifactId>
             <scope>test</scope>
@@ -112,6 +112,17 @@
         <dependency>
             <groupId>io.zonky.test.postgres</groupId>
             <artifactId>embedded-postgres-binaries-linux-arm64v8</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- THE FOURTH ARCH, AND IT IS THE CI ONE. The step containers are Alpine (musl):
+                 .config/qits/ci-event-userflows.yml runs `./mvnw verify` — the WHOLE reactor, so
+                 this module's suite spawns its postgres there too — in maven-base as
+                 `user: build`, and zonky picks the -alpine binaries at run time. Without it the
+                 suite resolves fine and then dies mid-run with no binary for the platform it is on.
+                 service/pom.xml carries the same fourth arch for the same run. -->
+            <groupId>io.zonky.test.postgres</groupId>
+            <artifactId>embedded-postgres-binaries-linux-amd64-alpine</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
