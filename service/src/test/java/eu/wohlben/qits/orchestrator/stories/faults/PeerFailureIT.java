@@ -1,0 +1,255 @@
+package eu.wohlben.qits.orchestrator.stories.faults;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import eu.wohlben.qits.orchestrator.stories.collection.GarbageCollectionRunIT;
+import eu.wohlben.qits.orchestrator.stories.support.StoryIdentities;
+import eu.wohlben.qits.orchestrator.stories.support.StoryNetwork;
+import eu.wohlben.qits.orchestrator.stories.support.StoryPeers;
+import eu.wohlben.qits.orchestrator.stories.support.StoryProfile;
+import eu.wohlben.qits.orchestrator.stories.support.StoryRuns;
+import eu.wohlben.qits.orchestrator.stories.support.StoryTarget;
+import eu.wohlben.qits.userflows.Interactions;
+import eu.wohlben.qits.userflows.NetworkCapture;
+import eu.wohlben.qits.userflows.NetworkEdge;
+import eu.wohlben.qits.userflows.UserStory;
+import eu.wohlben.qits.userflows.UserStoryDescription;
+import eu.wohlben.qits.userflows.UserflowRunsAfter;
+import eu.wohlben.qits.userflows.report.ReportAssertions;
+import eu.wohlben.qits.userflows.report.Slugs;
+import eu.wohlben.qits.userflows.report.UserflowReport;
+import io.quarkus.test.junit.QuarkusIntegrationTest;
+import io.quarkus.test.junit.TestProfile;
+import io.restassured.path.json.JsonPath;
+import io.restassured.specification.RequestSpecification;
+import java.util.List;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+
+/**
+ * <b>A night one peer is down</b> — and the rule that decides what still happens.
+ *
+ * <p>"Fail-closed is an edge, not an {@code if}" is the sentence this repository's working notes
+ * open the executor section with, and it is the hardest thing here to see from the outside. Nothing
+ * deletes against a keep-set it could not read, and the mechanism is the DEPENDENCY rather than a
+ * check inside a step: {@code artifacts.plan}, {@code artifacts.sweep} and {@code containers.images}
+ * declare the pin reads as edges, so a failed pin read skips all three before a body runs. The
+ * empty-keep-set path in {@code GcProcess.imagesBody} is kept as a belt and never gets the chance.
+ *
+ * <p><b>The rule cuts the other way too, and that half is the expensive one.</b> A step with no
+ * keep-set must NOT wait on a pin: {@code containers.volumes} and {@code containers.build-cache}
+ * hang off the disk measurement alone, because a prune and a dangling-volume sweep have nothing a
+ * pin could protect — and the build cache is the larger half of the measured problem, so skipping it
+ * on a pin failure would cost the platform the night's biggest reclaim for a reason that does not
+ * apply to it.
+ *
+ * <p>So one story, one broken peer, and a diagram that says both halves at once: an arrow to
+ * qits-ci carrying a 503, seven arrows to the peers that answered anyway, and <b>no arrow at all to
+ * qits-artifacts</b> — which is the claim a presence check cannot make and {@code assertNoEdgesTo}
+ * can.
+ *
+ * <h2>How the peer is broken</h2>
+ *
+ * <p>{@link StoryPeers#refuse} is the one piece of state in the stand-in, and the class javadoc over
+ * there says why it has to be state here and can be a path elsewhere: a gc run's ten paths are fixed
+ * by {@code GcProcess.steps()} and identical in every run, so "qits-ci is down tonight" cannot be
+ * spelled as a url the story addresses. It is armed inside a {@code try} and cleared in a {@code
+ * finally}, and cleared again in {@code @AfterEach} — a refusal that outlived its story would be a
+ * broken peer in somebody else's diagram, and the two would look exactly alike.
+ */
+@QuarkusIntegrationTest
+@TestProfile(StoryProfile.class)
+public class PeerFailureIT {
+
+  static final String CATEGORY = "resilience";
+
+  static final String CATEGORY_SLUG = Slugs.slug(CATEGORY);
+
+  static final String FAIL_CLOSED =
+      "A pin nobody could read deletes nothing, and stops nothing that needs no pin";
+
+  static final String FAIL_CLOSED_SLUG = Slugs.slug(FAIL_CLOSED);
+
+  @BeforeAll
+  static void tapBothEndsOfTheNetwork() {
+    StoryNetwork.install();
+  }
+
+  /** Belt for the {@code finally} below: no other story may inherit a broken peer. */
+  @AfterEach
+  void everyPeerAnswersAgain() {
+    StoryPeers.answerNormally();
+  }
+
+  private static Supplier<RequestSpecification> operator() {
+    return () -> StoryIdentities.person(given(), StoryIdentities.OPERATOR_ACCOUNT);
+  }
+
+  @UserStory(value = FAIL_CLOSED, category = CATEGORY)
+  @UserStoryDescription(
+      """
+      qits-ci is being redeployed at three in the morning, so the read that says which daemon binary
+      must survive the night answers 503. Everything that would delete on the strength of that pin
+      is skipped before its body runs — the registry plan, the registry sweep — and the run is
+      FAILED, because a peer that could not be read is a failure and not a footnote.
+
+      Nothing else stops. The disk is still measured, host images are still collected against the
+      deployment pins that DID answer, orphan volumes are still swept and the build cache is still
+      pruned — which is the largest reclaim of the night and has no keep-set anybody could have
+      protected it with. The repository catalogue is still read and merged branches are still swept.
+      A night where one broken peer stopped every unrelated reclaim would be a night of no reclaim
+      for no reason.
+
+      A skipped step names the step that actually FAILED rather than the skipped neighbour in
+      between, so a reader does not have to walk the graph backwards to find the cause. And the
+      whole of what "fail-closed" means is visible on the diagram rather than described: one arrow
+      to qits-ci carrying its 503, seven arrows to the peers that answered, and not one arrow to
+      qits-artifacts at all.
+      """)
+  @UserflowRunsAfter(GarbageCollectionRunIT.class)
+  void aBrokenPinReadSkipsOnlyWhatDeletesOnTheStrengthOfIt(Interactions story) {
+    NetworkCapture.actor(StoryIdentities.OPERATOR);
+
+    String id;
+    JsonPath run;
+    StoryPeers.refuse(StoryPeers.DAEMON_PATH);
+    try {
+      story.note("qits-ci is being redeployed; its daemon pin answers 503").as("peer-is-down");
+      id = StoryRuns.start(operator(), false);
+      run = StoryRuns.detail(operator(), id);
+    } finally {
+      // Always, and before any assertion: a refusal that outlived this story would be a broken peer
+      // in the next one's diagram.
+      StoryPeers.answerNormally();
+    }
+
+    assertEquals("FAILED", run.getString("status"), "a broken peer must fail the run: " + run.prettify());
+    story
+        .note(
+            "the run is FAILED — a peer that could not be read is a failure, not a footnote — and"
+                + " the failure is a sentence in a row rather than a stack trace")
+        .as("run-failed");
+
+    operator()
+        .get()
+        .when()
+        .get(StoryTarget.runPath(id))
+        .then()
+        .statusCode(200)
+        .body(StoryRuns.stepPath("pins.ci") + ".status", equalTo("FAILED"))
+        .body(StoryRuns.stepPath("pins.ci") + ".httpStatus", equalTo(StoryPeers.REFUSED_STATUS))
+        .body(StoryRuns.stepPath("pins.ci") + ".error", containsString("answered 503"))
+        // Everything that would delete on the strength of that pin, skipped before a body ran —
+        // and each one naming the step that actually failed rather than its neighbour.
+        .body(StoryRuns.stepPath("artifacts.plan") + ".status", equalTo("SKIPPED"))
+        .body(StoryRuns.stepPath("artifacts.plan") + ".error", equalTo("skipped: pins.ci failed"))
+        .body(StoryRuns.stepPath("artifacts.sweep") + ".status", equalTo("SKIPPED"))
+        .body(StoryRuns.stepPath("artifacts.sweep") + ".error", equalTo("skipped: pins.ci failed"));
+    story
+        .note(
+            "the registry plan and the sweep behind it are SKIPPED before either body runs — the"
+                + " edge is the guarantee — and both name pins.ci, the step that actually failed,"
+                + " rather than the skipped neighbour in between")
+        .as("fail-closed-cascade");
+
+    operator()
+        .get()
+        .when()
+        .get(StoryTarget.runPath(id))
+        .then()
+        .statusCode(200)
+        // The other pin answered, so the keep-set it protects exists and the image sweep runs.
+        .body(StoryRuns.stepPath("pins.deployments") + ".status", equalTo("SUCCEEDED"))
+        .body(StoryRuns.stepPath("containers.images") + ".status", equalTo("SUCCEEDED"))
+        // No keep-set to lose: the two that hang off the disk measurement alone.
+        .body(StoryRuns.stepPath("containers.volumes") + ".status", equalTo("SUCCEEDED"))
+        .body(StoryRuns.stepPath("containers.build-cache") + ".status", equalTo("SUCCEEDED"))
+        .body(
+            StoryRuns.stepPath("containers.build-cache") + ".summary",
+            containsString("host 12.6 GB reclaimed"))
+        // A different pin pattern one store further out, and unaffected by this one's failure.
+        .body(StoryRuns.stepPath("repos.catalogue") + ".status", equalTo("SUCCEEDED"))
+        .body(StoryRuns.stepPath("branches.sweep") + ".status", equalTo("SUCCEEDED"));
+    story
+        .note(
+            "everything that needed no pin ran anyway: 12.6 GB of build cache reclaimed, orphan"
+                + " volumes swept, host images collected against the deployment pins that DID"
+                + " answer, and merged branches swept over a catalogue this failure never touched")
+        .as("independent-steps-still-run");
+
+    operator()
+        .get()
+        .when()
+        .get(StoryTarget.runPath(id))
+        .then()
+        .statusCode(200)
+        // usage.after waits on the registry sweep, which was skipped BECAUSE something failed — so
+        // this skip cascades, and it too names the origin.
+        .body(StoryRuns.stepPath("usage.after") + ".status", equalTo("SKIPPED"))
+        .body(StoryRuns.stepPath("usage.after") + ".error", equalTo("skipped: pins.ci failed"))
+        .body("summary", containsString("pins.ci FAILED"));
+    story
+        .note(
+            "the closing measurement is skipped too, and by the same origin: a FAILURE skip is"
+                + " contagious where the dry run's POLICY skip was not, which is the distinction"
+                + " that cost this service a green run reading as broken before it existed")
+        .as("failure-skip-cascades");
+  }
+
+  @AfterAll
+  static void theFailClosedStoryIsComplete() {
+    ReportAssertions.assertComplete(CATEGORY_SLUG, FAIL_CLOSED_SLUG, UserflowReport.PASSED);
+    for (String step :
+        List.of(
+            "peer-is-down",
+            "run-failed",
+            "fail-closed-cascade",
+            "independent-steps-still-run",
+            "failure-skip-cascades")) {
+      ReportAssertions.assertStepId(CATEGORY_SLUG, FAIL_CLOSED_SLUG, step);
+    }
+
+    from(StoryIdentities.OPERATOR, "POST " + StoryTarget.GC_RUNS_PATH + " -> 202");
+    from(StoryIdentities.OPERATOR, "GET " + StoryTarget.RUN_LABEL_PATH + " -> 200");
+
+    // The broken peer, drawn with the status it answered — evidence rather than a claim.
+    to(StoryPeers.CI, StoryPeers.label("GET", StoryPeers.DAEMON_PATH, StoryPeers.REFUSED_STATUS));
+    // …and the seven calls that happened anyway. The disk was measured once rather than twice,
+    // because usage.after was skipped — it is the same label either way, so the count is what says
+    // so and the step assertions above are what make it readable.
+    to(StoryPeers.CONTAINERS, StoryPeers.read(StoryPeers.USAGE_PATH));
+    to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.IMAGES_PATH));
+    to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.VOLUMES_PATH));
+    to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.BUILD_CACHE_PATH));
+    to(StoryPeers.DEPLOYMENTS, StoryPeers.read(StoryPeers.PINS_PATH));
+    to(StoryPeers.PROJECTS, StoryPeers.read(StoryPeers.REPOSITORIES_PATH));
+    to(StoryPeers.WORKSPACES, StoryPeers.written(StoryPeers.BRANCHES_PATH));
+
+    // THE CLAIM A PRESENCE CHECK CANNOT MAKE. Nothing reached the registry — not the plan, not the
+    // sweep — because the pin that protects it could not be read. Fail-closed, stated as an
+    // absence, which is the only honest way to state it.
+    ReportAssertions.assertNoEdgesTo(CATEGORY_SLUG, FAIL_CLOSED_SLUG, StoryPeers.ARTIFACTS);
+    // Two in, eight out. The credential was minted an hour ago by the first run of the catalogue,
+    // so no token arrow belongs here — see StoryPeers on why exactly one story owns that edge.
+    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, FAIL_CLOSED_SLUG, 10);
+    ReportAssertions.assertOnlyEdgesFrom(
+        CATEGORY_SLUG,
+        FAIL_CLOSED_SLUG,
+        List.of(StoryIdentities.OPERATOR, StoryTarget.SERVICE));
+  }
+
+  private static void from(String actor, String label) {
+    ReportAssertions.assertEdge(
+        CATEGORY_SLUG, FAIL_CLOSED_SLUG, NetworkEdge.HTTP, actor, StoryTarget.SERVICE, label);
+  }
+
+  private static void to(String peer, String label) {
+    ReportAssertions.assertEdge(
+        CATEGORY_SLUG, FAIL_CLOSED_SLUG, NetworkEdge.HTTP, StoryTarget.SERVICE, peer, label);
+  }
+}

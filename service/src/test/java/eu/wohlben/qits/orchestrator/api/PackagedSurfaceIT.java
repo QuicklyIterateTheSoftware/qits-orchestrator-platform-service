@@ -92,7 +92,7 @@ public class PackagedSurfaceIT {
     public Map<String, String> getConfigOverrides() {
       String dead = "http://127.0.0.1:" + deadPort();
       return Map.of(
-          "QITS_RESOURCE_DB_URL", databaseUrl(),
+          "QITS_RESOURCE_DB_URL", databaseUrl(URL_PROPERTY, DATABASE),
           "QITS_RESOURCE_DB_USERNAME", EmbeddedPg.USER,
           "QITS_RESOURCE_DB_PASSWORD", EmbeddedPg.PASSWORD,
           "qits.orchestrator.targets.artifacts-url", dead,
@@ -108,14 +108,24 @@ public class PackagedSurfaceIT {
           "quarkus.scheduler.enabled", "false");
     }
 
-    private static synchronized String databaseUrl() {
-      String recorded = System.getProperty(URL_PROPERTY);
+    /**
+     * The parking trick itself, {@code protected} and parameterised so a subclass in another
+     * package can reuse it rather than copy it.
+     *
+     * <p>{@code stories.support.StoryProfile} needs a database of its OWN — the story catalogue
+     * starts four gc runs and reads the history back, and sharing a database with this IT would
+     * make each suite's assertions depend on whether the other had run. What it must not have of
+     * its own is a second copy of the two-classloader workaround, which is the thing that is easy
+     * to get subtly wrong; so the name is the subclass's and the mechanism stays here.
+     */
+    protected static synchronized String databaseUrl(String property, String database) {
+      String recorded = System.getProperty(property);
       if (recorded != null) {
         return recorded;
       }
       // localhost resolves for the launched process too — it is a child of this JVM on this host.
-      String url = EmbeddedPg.url(DATABASE);
-      System.setProperty(URL_PROPERTY, url);
+      String url = EmbeddedPg.url(database);
+      System.setProperty(property, url);
       return url;
     }
 

@@ -7,8 +7,12 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import eu.wohlben.qits.orchestrator.stories.support.StoryIdentities;
+import eu.wohlben.qits.orchestrator.stories.support.StoryNetwork;
+import eu.wohlben.qits.orchestrator.stories.support.StoryProfile;
 import eu.wohlben.qits.servicemock.idp.MockIdp;
 import eu.wohlben.qits.userflows.Interactions;
+import eu.wohlben.qits.userflows.NetworkCapture;
 import eu.wohlben.qits.userflows.UserStory;
 import eu.wohlben.qits.userflows.UserStoryDescription;
 import eu.wohlben.qits.userflows.report.ReportAssertions;
@@ -16,16 +20,18 @@ import eu.wohlben.qits.userflows.report.UserflowReport;
 import io.quarkus.test.junit.QuarkusIntegrationTest;
 import io.quarkus.test.junit.TestProfile;
 import io.restassured.http.ContentType;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.TestMethodOrder;
 
 /**
  * The whole service as it is <b>packaged</b> — like {@link PackagedSurfaceIT} beside it, but with
  * the OIDC tenant <b>on</b>, which no {@code @QuarkusTest} here can prove.
  *
  * <p>The shipped tenant is {@code quarkus.oidc.tenant-enabled=${qits.auth.machine.required:false}},
- * and <b>no suite in this repository turns that gate on at all</b> — the test
+ * and <b>no suite in this repository turns that gate on except the story catalogue</b> — the test
  * application.properties says so in as many words ("the OIDC tenant is disabled because
  * qits.auth.machine.required defaults false"), which is what keeps a clone-alone {@code ./mvnw
  * verify} free of an issuer. Every {@code @QuarkusTest} here therefore runs under the {@code test}
@@ -33,13 +39,27 @@ import org.junit.jupiter.api.AfterAll;
  * forward-auth headers qits-gateway asserts. The consequence is that the entire shipped {@code
  * quarkus.oidc.*} block — auth-server-url with {@code discovery-enabled=false} and {@code
  * jwks-path=jwks} joined onto it, the boot-time fetch that {@code connection-delay} retries,
- * audience enforcement, groups&rarr;roles mapping — is exercised NOWHERE. This is the one place it
- * runs. The far side is {@link MockIdp}, whose recordings make the interaction assertable on
+ * audience enforcement, groups&rarr;roles mapping — is exercised NOWHERE else. This is where it
+ * starts. The far side is {@link MockIdp}, whose recordings make the interaction assertable on
  * <b>both ends</b>.
  *
- * <p>It is also this repo's first <b>userflow</b>: the proof doubles as documentation, emitted
- * under {@code target/userstories/} with the interactions drawn as a sequence diagram. The stories
- * are browserless (no {@code Flow} parameter), so no Chromium is involved anywhere.
+ * <p><b>This is the catalogue's first story class and it owns the boot.</b> Every story class in
+ * this repository names {@link StoryProfile}, which is what makes them one launched process rather
+ * than several; and {@code UserflowClassOrderer} sorts by fully-qualified class name, so {@code
+ * …orchestrator.api} runs before {@code …orchestrator.stories.*}. That matters because a cumulative
+ * source is attributed by a cursor: traffic that happened before any story ran — the startup JWKS
+ * fetch, which is the whole subject of the first story here — lands in whichever story drains
+ * <i>first</i>. Pinning both orders is what keeps that the story it belongs to.
+ *
+ * <p>The proof doubles as documentation, emitted under {@code target/userstories/} with a network
+ * diagram beside the steps. The diagram is <b>observed, never narrated</b> — the framework's
+ * shipped {@code NetworkTaps.restAssured} sees what a story sends into this service, {@link MockIdp}
+ * and the peer stand-in supply what this service sent out, and the framework drains all three at
+ * story end. (This repository carried a hand-copied {@code StoryNetworkFilter} for exactly the
+ * first of those; it was deleted when the rest of the catalogue was written.) A story method
+ * therefore asserts and notes; it draws nothing, which is also why the plan assertion below is a
+ * note: it is a claim about the BODY of an answer already on the diagram, not a second request. The
+ * stories are browserless (no {@code Flow} parameter), so no Chromium is involved anywhere.
  *
  * <p><b>The route both stories drive is {@code GET /orchestrator/api/processes}</b>, the process
  * catalogue, and it is chosen as the least side-effectful read this service has. Every route here
@@ -51,20 +71,18 @@ import org.junit.jupiter.api.AfterAll;
  *       carries a process kind, the run detail a run id;
  *   <li>it opens no store and calls no peer. {@code Runs.processes()} reads the {@code
  *       ProcessRegistry}, which is CDI discovery and nothing else, so the answer is a fact about
- *       THIS artifact rather than about a peer this IT would then have to stand in for — the
- *       qits-platform-deployments pin-ledger property, one step further in: not even a row is read;
+ *       THIS artifact rather than about a peer;
  *   <li>and it is the read whose answer is the pinned contract. {@code qits-orchestrator-plan.md}
  *       in the qits-qits wrapper fixes the step ids and the edges between them and four
  *       repositories build against them, so what the catalogue serves is the plan itself.
  * </ul>
  *
- * <p><b>The write is the obvious other candidate and it is worse on every count</b>, which is why
- * no story here posts one. {@code POST /processes/{kind}/runs} starts real deletions on four other
- * services; it is a 202 that hands the work to a single-threaded executor, it writes a run and
- * eleven step rows, and against the dead peer addresses this profile inherits it would spend the
- * story's time recording eleven failures. A story documenting "a machine may do this" would be a
- * story documenting a deletion. {@link PackagedSurfaceIT} already starts one, on its own terms, for
- * a different claim: that a failure is carried all the way into a readable row.
+ * <p><b>The write is a story too, and it is somebody else's.</b> {@code POST /processes/{kind}/runs}
+ * starts real deletions on six other services, so the stories that drive it live in {@code
+ * stories.collection} beside a stand-in that answers as all six — and the refusals on that door,
+ * which is where "no anonymous surface" actually costs something, live in {@code stories.refusals}.
+ * Keeping them apart keeps this class about the one thing only a gate-on boot can show: that the
+ * keys were fetched before any caller arrived.
  *
  * <p><b>ITs are skipped by default here and this one does NOT flip that.</b> {@code skipITs} is
  * {@code true} in the root pom because {@link PackagedSurfaceIT} is this module's other integration
@@ -72,13 +90,14 @@ import org.junit.jupiter.api.AfterAll;
  * fallback that must not swallow {@code /orchestrator} — which the userflow pipeline deliberately
  * does not build ({@code -Dquarkus.quinoa=false}, since the qits-platform-spa-orchestrator
  * submodule arrives EMPTY in a step container). A blanket {@code -DskipITs=false} would make that
- * run red on a test that is right. {@code .config/qits/ci-event-userflows.yml} names this class
- * instead ({@code -DskipITs=false "-Dit.test=TokenValidationBootstrapIT"}), which is also what
- * keeps the userflow pipeline about these stories and nothing else — and keeps the property's own
- * meaning ("run everything") intact for the {@code native} profile in service/pom.xml that sets it.
+ * run red on a test that is right. {@code .config/qits/ci-event-userflows.yml} names the story
+ * classes instead, which is also what keeps the userflow pipeline about these stories and nothing
+ * else — and keeps the property's own meaning ("run everything") intact for the {@code native}
+ * profile in service/pom.xml that sets it.
  */
 @QuarkusIntegrationTest
-@TestProfile(TokenValidationBootstrapIT.PackagedWithMockIdp.class)
+@TestProfile(StoryProfile.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class TokenValidationBootstrapIT {
 
   static final String CATEGORY = "authentication";
@@ -88,84 +107,30 @@ public class TokenValidationBootstrapIT {
 
   private static final String PROCESSES = "/orchestrator/api/processes";
 
+  /** How the diagram names this service on both sides of an edge. */
+  static final String SERVICE = "qits-platform-orchestrator";
+
   /** The one process this platform has, and the kind every step id below hangs under. */
   private static final String GC = "find { it.kind == 'gc' }";
 
   /**
-   * {@link PackagedSurfaceIT.PackagedUnderTarget} — the {@code QITS_RESOURCE_DB_*} triple on this
-   * JVM's embedded postgres, the four peer addresses pointed at a port nothing listens on, and the
-   * clock switched off, all parked in system properties because a test profile is instantiated in
-   * more than one classloader — <b>plus the two things these stories are about</b>: the gate that
-   * turns the shipped OIDC tenant on, and where the idp is.
+   * Wires every end of the network diagram, once, before either story runs.
    *
-   * <p>Extending rather than copying is deliberate. What a launched qits-platform-orchestrator
-   * needs in order to boot at all is one answer, it is written out at length over there (the triple
-   * is mandatory: the domain jar's datasource expressions have no default behind them), and a
-   * second copy of the parking trick would be a second place for it to drift. What is added here is
-   * only the seams these stories move.
+   * <p>{@link StoryNetwork} installs the framework's RestAssured tap (the near side), registers the
+   * idp's recording as a <b>cumulative</b> source with no floor, and registers the peer stand-in's
+   * access log. The idp source is the one that matters here: the supplier hands over the mock's
+   * whole request log every time it is asked and the framework remembers how much of it earlier
+   * stories already consumed, so the startup fetch — recorded long before any story existed — is
+   * attributed to the first story and to that one only. It is invoked lazily at story end, so
+   * registering it here is safe even though nothing has been recorded yet.
    *
-   * <p><b>{@code quarkus.scheduler.enabled=false} is inherited and it is load-bearing here rather
-   * than tidy.</b> The gc schedule is a cron at 03:00 UTC, and a CI run that happened to straddle
-   * that minute would start an unattended, non-dry deletion run out of a test JVM. It cannot reach
-   * a real peer — every address below is dead — but a story is not the place to find that out.
-   *
-   * <p>The mock idp starts <b>before</b> the application, via {@link MockIdp#ensureStarted()},
-   * which parks its coordinates (and its keypair) in system properties for the same classloader
-   * reason — that is also how a story method's {@link MockIdp#attach()} reaches the very server the
-   * launched process fetched its keys from.
-   *
-   * <p><b>Every key here is a RUNTIME key.</b> A packaged process takes its configuration as {@code
-   * -D} arguments on a jar that was already built, so a build-time key would be silently ignored
-   * and these tests would prove the opposite of what they say.
-   *
-   * <p><b>There is no telemetry or event-bus line to darken, and that is a fact about this
-   * repository rather than an omission.</b> Nothing here depends on qits-eventstream or on an
-   * opentelemetry extension — the poms carry neither — so the dial-outs a boot could make are
-   * exactly two kinds. The first is the JWKS fetch, which is pointed at {@link MockIdp} below and
-   * is the whole point of the file. The second is the six peers, and they never dial at boot: a
-   * peer is called only from inside a run, the four named oidc clients ship {@code
-   * client-enabled=false} with {@code early-tokens-acquisition=false} beside them, and the unnamed
-   * default client ships disabled too. The addresses are neutralised anyway — the four inherited
-   * ones by the parent, the remaining two below — because a defaulted {@code qits-projects:8080}
-   * resolves to nothing in a step container and "resolves to nothing" is a slower failure than
-   * "connection refused".
+   * <p>The label carries the status the mock <i>answered</i> with, which is the half a method and
+   * path cannot supply: {@code "GET /idp/jwks -> 200"} is evidence that the keys were served, not
+   * merely asked for.
    */
-  public static class PackagedWithMockIdp extends PackagedSurfaceIT.PackagedUnderTarget {
-
-    /**
-     * The audience this service enforces, and it is a LITERAL rather than a variable name — the
-     * difference from qits-githost's IT, which hands its launched process {@code
-     * QITS_AUTH_MACHINE_AUDIENCE} because the shipped expression there reads that variable. Here
-     * {@code qits.auth.machine.audience=qits-platform-orchestrator} is spelled out in {@code
-     * application.properties} and {@code quarkus.oidc.token.audience} references it, so the
-     * audience under test is the shipped one and there is no expression to feed. A deployment still
-     * overrides it by environment.
-     */
-    static final String AUDIENCE = "qits-platform-orchestrator";
-
-    @Override
-    public Map<String, String> getConfigOverrides() {
-      MockIdp idp = MockIdp.ensureStarted();
-      Map<String, String> overrides = new LinkedHashMap<>(super.getConfigOverrides());
-      // THE GATE, and turning it on is the point: the shipped tenant is
-      // quarkus.oidc.tenant-enabled=${qits.auth.machine.required:false}, so this one key is the
-      // difference between a service that validates machine bearers and one that does not. The
-      // application.properties block says what flipping it implies — with it on there IS a tenant,
-      // and the tenant fetches a JWKS at boot — and this is where that is proved rather than
-      // described. It also says there is no third state, which is why nothing else is set with it.
-      overrides.put("qits.auth.machine.required", "true");
-      // The one seam these stories move: where the idp is. Runtime key, so the packaged artifact is
-      // otherwise exactly what ships — discovery stays off and jwks-path stays `jwks`, joined onto
-      // this URL.
-      overrides.put("quarkus.oidc.auth-server-url", idp.baseUrl());
-      // The two peers the parent does not name, pointed at the same dead address as the four it
-      // does. Reading its value back rather than choosing a second one keeps one dead port in this
-      // profile: a second helper here would be a second thing to keep true.
-      String dead = overrides.get("qits.orchestrator.targets.artifacts-url");
-      overrides.put("qits.orchestrator.targets.projects-url", dead);
-      overrides.put("qits.orchestrator.targets.workspaces-url", dead);
-      return overrides;
-    }
+  @BeforeAll
+  static void tapEveryEndOfTheNetwork() {
+    StoryNetwork.install();
   }
 
   @UserStory(
@@ -181,6 +146,7 @@ public class TokenValidationBootstrapIT {
       contract four repositories build against, and it is what a caller reads before it asks for
       a run — the run being minutes of somebody else's pruning, on four other services' stores.
       """)
+  @Order(1)
   void serviceBootFetchesJwksAndAcceptsPlatformTokens(Interactions story) {
     MockIdp idp = MockIdp.attach();
 
@@ -197,17 +163,21 @@ public class TokenValidationBootstrapIT {
         idp.recordedRequests().stream().anyMatch(r -> "/idp/jwks".equals(r.path())),
         "the packaged service never fetched /idp/jwks at startup");
     story
-        .happened("qits-platform-orchestrator", "qits-platform-idp", "GET /idp/jwks (at startup)")
+        .note("the signing keys were fetched at startup, before this story presented any token")
         .as("jwks-fetched");
 
     // End (b), this service's side: those keys are what token validation now runs on. A platform
     // peer's bearer (aud = this service, roles in `groups`) opens the process catalogue — no path
     // parameter, nothing named, no store opened and no peer called.
+    //
+    // The actor is set BEFORE the call: the tap sees a request, never a narrative role, and this is
+    // what makes the observed edge read `a platform service -> qits-platform-orchestrator`.
+    NetworkCapture.actor("a platform service");
     String peerToken =
         idp.token()
             .subject("a-platform-service")
-            .audience(PackagedWithMockIdp.AUDIENCE)
-            .groups("qits:system")
+            .audience(StoryIdentities.AUDIENCE)
+            .groups(StoryIdentities.MACHINE_ROLE)
             .mint();
     given()
         .header("Authorization", "Bearer " + peerToken)
@@ -219,10 +189,8 @@ public class TokenValidationBootstrapIT {
         .body(GC + ".name", equalTo("Garbage collection"))
         .body(GC + ".description", notNullValue());
     story
-        .happened(
-            "a platform service",
-            "qits-platform-orchestrator",
-            "GET /orchestrator/api/processes (Bearer, groups=[qits:system])")
+        .note("a platform peer's bearer (aud=qits-platform-orchestrator, groups=[qits:system]) is"
+            + " accepted and the catalogue is served")
         .as("catalogue-served");
 
     // End (c), and it is what makes this answer worth guarding rather than a greeting: the plan the
@@ -231,10 +199,15 @@ public class TokenValidationBootstrapIT {
     // bean could quietly fail to be discovered — ProcessRegistry finds them by CDI, so a fast-jar
     // that lost the bean would answer 200 with an empty list and nothing else here would notice.
     //
-    // The edge asserted is the fail-closed one and it is asserted BECAUSE it is a promise made on
-    // the wire: `artifacts.plan` waits on both pin reads, so a pin read that failed skips the plan,
-    // the sweep behind it and the image collection beside it before any body runs. A reader of this
-    // document can see that without running a night.
+    // The dependency asserted is the fail-closed one and it is asserted BECAUSE it is a promise made
+    // on the wire: `artifacts.plan` waits on both pin reads, so a pin read that failed skips the
+    // plan, the sweep behind it and the image collection beside it before any body runs. A reader of
+    // this document can see that without running a night — and `stories.faults` then shows it
+    // happening.
+    //
+    // This is the same route, the same actor and the same status as the call above, so the tap
+    // observes one arrow for both — which is right: what is new here is not a hop but a claim about
+    // the BODY, and a claim about a body is a step rather than an edge. It is therefore a note.
     given()
         .header("Authorization", "Bearer " + peerToken)
         .get(PROCESSES)
@@ -246,10 +219,8 @@ public class TokenValidationBootstrapIT {
             GC + ".steps.find { it.id == 'artifacts.plan' }.dependsOn",
             contains("pins.deployments", "pins.ci"));
     story
-        .happened(
-            "a platform service",
-            "qits-platform-orchestrator",
-            "reads the gc plan: 11 steps, artifacts.plan depends on both pin reads (fail-closed)")
+        .note("the gc plan is the pinned one: 11 steps, artifacts.plan depends on both pin reads"
+            + " (fail-closed)")
         .as("plan-is-the-pinned-one");
   }
 
@@ -267,8 +238,13 @@ public class TokenValidationBootstrapIT {
       forbidden. A token addressed here and signed correctly but carrying a role this service has
       never heard of gets the other answer, 403 — it authenticated and covers nothing.
       """)
+  @Order(2)
   void aStrangersTokenIsRefused(Interactions story) {
     MockIdp idp = MockIdp.attach();
+
+    // Three initiators in this story and three arrows, so the actor is set before each group rather
+    // than once up front — nobody, then a forger, then a real caller holding the wrong role.
+    NetworkCapture.actor("an unauthenticated caller");
 
     // The first door, and it is this service's own shape rather than the fleet's. The gate being on
     // changes nothing about it: with the tenant enabled there are two mechanisms at the door, the
@@ -277,16 +253,14 @@ public class TokenValidationBootstrapIT {
     // refusal is not an artefact of how this service happens to be configured.
     given().get(PROCESSES).then().statusCode(401);
     story
-        .happened(
-            "an unauthenticated caller",
-            "qits-platform-orchestrator",
-            "GET /orchestrator/api/processes (no credential) -> 401")
+        .note("a request carrying no credential at all satisfies neither mechanism and is refused")
         .as("anonymous-refused");
 
+    NetworkCapture.actor("an impostor");
     String strangersToken =
         idp.token()
-            .audience(PackagedWithMockIdp.AUDIENCE)
-            .groups("qits:system")
+            .audience(StoryIdentities.AUDIENCE)
+            .groups(StoryIdentities.MACHINE_ROLE)
             .signedByUnknownKey()
             .mint();
     given()
@@ -294,25 +268,25 @@ public class TokenValidationBootstrapIT {
         .get(PROCESSES)
         .then()
         .statusCode(401);
+    // The impostor's two credentials are the same edge — same actor, same route, same status — so
+    // the diagram draws one arrow and the notes are what keep them distinguishable. That is the
+    // right division: the graph says who reached what and got what, the steps say why.
     story
-        .happened(
-            "an impostor",
-            "qits-platform-orchestrator",
-            "GET /orchestrator/api/processes (token signed by an unknown key) -> 401")
+        .note("a token signed by a key the published JWKS never carried is refused")
         .as("unknown-key-refused");
 
     String wrongAudienceToken =
-        idp.token().audience("some-other-service").groups("qits:system").mint();
+        idp.token()
+            .audience("some-other-service")
+            .groups(StoryIdentities.MACHINE_ROLE)
+            .mint();
     given()
         .header("Authorization", "Bearer " + wrongAudienceToken)
         .get(PROCESSES)
         .then()
         .statusCode(401);
     story
-        .happened(
-            "an impostor",
-            "qits-platform-orchestrator",
-            "GET /orchestrator/api/processes (another service's audience) -> 401")
+        .note("a token minted for another service's audience is refused just the same")
         .as("wrong-audience-refused");
 
     // The last door, and the one that proves the groups→roles mapping really ran rather than being
@@ -321,36 +295,51 @@ public class TokenValidationBootstrapIT {
     // still covers nothing. The two that DO open this route — qits:admin and qits:system — are
     // deliberately not distinguished anywhere in this service, so there is no narrower ceiling to
     // draw: an operator presses Run now in a browser and a machine may post the same run.
+    //
+    // A real caller with a real credential, so a third actor and a third arrow: it authenticated,
+    // which is exactly what the 403 rather than a 401 records.
+    NetworkCapture.actor("a caller with the wrong role");
     String readerToken =
         idp.token()
             .subject("somebody-elses-service")
-            .audience(PackagedWithMockIdp.AUDIENCE)
-            .groups("qits:reader")
+            .audience(StoryIdentities.AUDIENCE)
+            .groups(StoryIdentities.UNPRIVILEGED_ROLE)
             .mint();
     given().header("Authorization", "Bearer " + readerToken).get(PROCESSES).then().statusCode(403);
     story
-        .happened(
-            "a caller with the wrong role",
-            "qits-platform-orchestrator",
-            "GET /orchestrator/api/processes (Bearer, groups=[qits:reader]) -> 403")
+        .note("a token carrying a role this service never names authenticates and covers nothing")
         .as("wrong-role-refused");
   }
 
   @AfterAll
   static void bothStoryReportsAreComplete() {
     // The extension emits each report in its afterEach, so both are on disk before @AfterAll runs.
+    // assertComplete now also proves the network section: the sidecar's edges are canonical, the
+    // networkHash recomputes from them, and every mermaid line is in the markdown.
     ReportAssertions.assertComplete(CATEGORY, ACCEPTED_SLUG, UserflowReport.PASSED);
-    ReportAssertions.assertInteraction(
-        CATEGORY,
-        ACCEPTED_SLUG,
-        "qits-platform-orchestrator",
-        "qits-platform-idp",
-        "GET /idp/jwks (at startup)");
+    // Observed on the far side, drained from the mock's recording, and attributed to this story
+    // because it is the first one that ran (see the class javadoc on ordering).
+    ReportAssertions.assertEdge(
+        CATEGORY, ACCEPTED_SLUG, "http", SERVICE, MockIdp.SERVICE_NAME, "GET /idp/jwks -> 200");
+    // Observed on the near side, by the shipped tap, with the actor this story set. Both reads of
+    // the catalogue collapse into this one arrow, which is why the plan claim is a note.
+    ReportAssertions.assertEdge(
+        CATEGORY, ACCEPTED_SLUG, "http", "a platform service", SERVICE,
+        "GET " + PROCESSES + " -> 200");
     ReportAssertions.assertStepId(CATEGORY, ACCEPTED_SLUG, "jwks-fetched");
     ReportAssertions.assertStepId(CATEGORY, ACCEPTED_SLUG, "catalogue-served");
     ReportAssertions.assertStepId(CATEGORY, ACCEPTED_SLUG, "plan-is-the-pinned-one");
 
     ReportAssertions.assertComplete(CATEGORY, DENIED_SLUG, UserflowReport.PASSED);
+    // Three doors, three initiators, three arrows — the whole of what the denied story documents.
+    ReportAssertions.assertEdge(
+        CATEGORY, DENIED_SLUG, "http", "an unauthenticated caller", SERVICE,
+        "GET " + PROCESSES + " -> 401");
+    ReportAssertions.assertEdge(
+        CATEGORY, DENIED_SLUG, "http", "an impostor", SERVICE, "GET " + PROCESSES + " -> 401");
+    ReportAssertions.assertEdge(
+        CATEGORY, DENIED_SLUG, "http", "a caller with the wrong role", SERVICE,
+        "GET " + PROCESSES + " -> 403");
     ReportAssertions.assertStepId(CATEGORY, DENIED_SLUG, "anonymous-refused");
     ReportAssertions.assertStepId(CATEGORY, DENIED_SLUG, "unknown-key-refused");
     ReportAssertions.assertStepId(CATEGORY, DENIED_SLUG, "wrong-audience-refused");
