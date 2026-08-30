@@ -273,7 +273,7 @@ in their query are ONE edge.
 
 ## The client
 
-`service/src/main/webui` is the `qits-platform-spa-orchestrator` submodule (`ignore = all`,
+`service/src/main/webui` is the `qits-orchestrator-platform-frontend` submodule (`ignore = all`,
 `update = merge`, `branch = main` — the sibling shape). Quinoa 2.8.2 is pinned by hand in the root
 pom, because Quinoa is in no BOM and its version does not track the platform's.
 
