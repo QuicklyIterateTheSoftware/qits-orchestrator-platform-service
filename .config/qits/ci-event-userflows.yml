@@ -1,7 +1,7 @@
 # The per-commit userflow run: `mvn verify` at the pushed commit — which regenerates
-# service/target/userstories/ through TokenValidationBootstrapIT — and the reports published as one
-# docs bundle, site @userflows/qits-platform-orchestrator, version = the bare commit sha, branch
-# riding as artifacts metadata for discovery.
+# service/target/userstories/ through the five story classes named below — and the reports published
+# as one docs bundle, site @userflows/qits-platform-orchestrator, version = the bare commit sha,
+# branch riding as artifacts metadata for discovery.
 #
 # NON-GATING BY DESIGN, which is why it is a separate file from ci-post-receive.yml: this run going
 # red must not cost the branch its image while "quality gate before merging" is still a decision to
@@ -24,10 +24,13 @@
 # safe.directory entry, so a non-root checkout is what the image was built to serve.
 # qits-eventstream's pipeline is the measured precedent for all of it.
 #
-# THERE IS NO DOCKER SOCKET IN THIS STEP AND NONE IS WANTED. This service holds no docker socket in
-# production either — that is qits-containers' — and the launched artifact here reaches no peer at
-# all: the IT's profile points all six target urls at a port nothing listens on, and a peer is only
-# ever called from inside a run, which no story starts. `docker: true` would be a grant for nothing.
+# THERE IS NO DOCKER SOCKET IN THIS STEP AND NONE IS WANTED, and the stories reach nothing outside
+# this container. This service holds no docker socket in production either — that is qits-containers'
+# — and every peer the launched artifact talks to here is on localhost: stories.support.StoryPeers is
+# one com.sun HttpServer impersonating all six by path prefix (plus the idp token endpoint the six
+# oidc clients mint against), and qits-service-mock's MockIdp is a second one serving the JWKS. Four
+# gc runs happen in this step and not one of their requests leaves the container — the only outbound
+# traffic is maven's, to the platform registry. `docker: true` would be a grant for nothing.
 #
 # Quinoa is off (`-Dquarkus.quinoa=false` — the extension's root toggle; `.enabled` is silently
 # ignored and npm still runs): the client is ci-post-receive.yml's business, where the
@@ -41,17 +44,33 @@
 #
 # THE TWO IT FLAGS ARE THE OTHER HALF, and they are why this repository does NOT opt its service
 # module back into ITs the way qits-githost does. `skipITs` is true in the root pom and stays true;
-# this module has two integration tests and only one of them belongs to this run:
+# this module has six integration tests and five of them belong to this run:
 #
-#   TokenValidationBootstrapIT  the userflow — the whole point of this file
-#   PackagedSurfaceIT           half about the CLIENT (the base href at the root, the deep links,
-#                               the fallback that must not swallow /orchestrator), which the line
-#                               above deliberately does not build. A blanket `-DskipITs=false`
-#                               would make this quinoa-less run red on a test that is right.
+#   api.TokenValidationBootstrapIT        the boot: the gate on, the JWKS fetched, the plan served
+#   stories.collection.GarbageCollectionRunIT   a run, a dry run, and one-at-a-time
+#   stories.faults.PeerFailureIT          a broken pin read, and what it does and does not stop
+#   stories.operations.RunHistoryIT       the plan before, the account after
+#   stories.refusals.DeletionRefusalIT    the doors on the write surface
 #
-# Naming the class keeps the opt-in to this pipeline and to these stories, and keeps the property's
-# own meaning ("run everything") intact for the `native` profile in service/pom.xml that sets it:
-# `-DskipITs=false "-Dit.test=TokenValidationBootstrapIT"`.
+#   api.PackagedSurfaceIT     NOT in the list: half of it is about the CLIENT (the base href at the
+#                             root, the deep links, the fallback that must not swallow
+#                             /orchestrator), which the quinoa line above deliberately does not
+#                             build. A blanket `-DskipITs=false` would make this run red on a test
+#                             that is right.
+#
+# THE ORDER OF THAT LIST IS NOT THE ORDER THEY RUN IN, and it must not be read as one. Class order is
+# the userflows orderer's: a topological sort over @UserflowRunsAfter, ties broken by fully-qualified
+# class name — so `api.*` runs before `stories.*`, and inside stories `collection` before `faults`
+# before `operations` before `refusals`. That is load-bearing rather than tidy: a cumulative capture
+# source is attributed by a cursor, so the startup JWKS fetch lands in whichever story drains first
+# and the outbound token mint (cached for an hour) lands in whichever story makes the first peer
+# call. Both are asserted on the story that owns them.
+#
+# ALL FIVE SHARE ONE @TestProfile, which is what makes them ONE launched process rather than five.
+# Two profiles would be two orchestrators, two boots, two JWKS fetches and two databases.
+#
+# Naming the classes keeps the opt-in to this pipeline and to these stories, and keeps the property's
+# own meaning ("run everything") intact for the `native` profile in service/pom.xml that sets it.
 #
 # NO REPAIR WAS NEEDED to make the two new test-scope jars resolve. This repository already carries
 # `.qits-maven-settings.xml` and a `qits-maven` <repositories> entry — qits-auth-core, qits-db-core
@@ -66,10 +85,12 @@
 # published to qits-artifacts and read back by qits-docs, neither of which is this service. There is
 # nothing else to darken in the launched process: this repository has no event bus client and no
 # opentelemetry extension on its classpath, and the only dial-out a boot here makes is the JWKS
-# fetch, which the IT points at its own MockIdp — the six peer clients ship disabled with
-# early-tokens-acquisition off, and the IT's inherited profile switches the gc CLOCK off besides, so
-# nothing in this step can start a deletion run. Publish-if-absent: events redeliver and docs
-# versions are immutable, so 409 is success (the qits-spa-ui-components release file's discipline).
+# fetch, which the profile points at its own MockIdp. The six peer clients ship disabled and the
+# story profile enables them against the in-JVM stub, never against a real idp; the gc CLOCK stays
+# off (the parent profile's `quarkus.scheduler.enabled=false`), so the only runs in this step are the
+# four the stories start themselves and nothing unattended can begin one. Publish-if-absent: events
+# redeliver and docs versions are immutable, so 409 is success (the qits-spa-ui-components release
+# file's discipline).
 event: SCMPublishCommit
 when:
   - repoId: { exact: qits-platform-orchestrator }
@@ -90,7 +111,8 @@ steps:
       ./mvnw -B -ntp -s .qits-maven-settings.xml verify \
         -Dqits.maven.repository.url="$QITS_MAVEN_REPOSITORY_URL" \
         -Dquarkus.quinoa=false \
-        -DskipITs=false "-Dit.test=TokenValidationBootstrapIT"
+        -DskipITs=false \
+        "-Dit.test=TokenValidationBootstrapIT,GarbageCollectionRunIT,PeerFailureIT,RunHistoryIT,DeletionRefusalIT"
 
       # `-C … .` so the story directories are the bundle's roots — nesting one directory deep would
       # put it in every served URL. The path is service/target/userstories because the stories live

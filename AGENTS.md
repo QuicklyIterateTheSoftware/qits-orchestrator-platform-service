@@ -12,9 +12,9 @@ rule re-implemented here would be a second opinion, and it would be the copy no 
 exercises. If a process needs something a peer cannot do, the change goes in the peer.
 
 **The contract is pinned by `qits-orchestrator-plan.md` in the qits-qits wrapper.** Route shapes,
-step ids, the edges between them, and the request and response bodies of all four peers are written
-down there and four repositories build against them in parallel. Changing one of those shapes is a
-plan edit and a conversation, not a commit here.
+step ids, the edges between them, and the request and response bodies of all six peers are written
+down there and the repositories that own them build against them in parallel. Changing one of those
+shapes is a plan edit and a conversation, not a commit here.
 
 **A clone of this repo alone builds and tests green** — no monorepo, no docker, no prior `mvn
 install` elsewhere, no credentials. That is why the poms duplicate versions instead of inheriting
@@ -120,7 +120,7 @@ process whose steps had to catch would put half its outcomes on a path nobody re
 that matters belongs to the call: an anonymous call to a guarded peer comes back 401 and the step
 records the url and the status, which is more useful than a mint failure one layer earlier.
 
-**Four named clients, one per peer**, because a token is cut FOR one service. The audience is the
+**Six named clients, one per peer**, because a token is cut FOR one service. The audience is the
 one value the shipped defaults leave unset: it is environment-qualified, and an image every
 environment shares must not name a tier it may not be running in. The unnamed default client is
 disabled and stays disabled — the extension creates it whether or not anything injects it.
@@ -160,7 +160,8 @@ quarkus-oidc against qits-platform-idp.
 
 **Both land as roles, which is why every route is `@RolesAllowed({"qits:admin", "qits:system"})`.**
 An operator presses Run now in a browser; a machine may post the same run. There is no anonymous
-route here and there must never be one — the write surface starts deletions on four other services.
+route here and there must never be one — the write surface starts deletions on other services'
+stores. `stories.refusals` is where each door is shown being shut rather than described.
 
 `quarkus.oidc.tenant-enabled=${qits.auth.machine.required:false}` — validation follows the rollout
 gate rather than standing on its own, so with the gate off there is no OIDC tenant, nothing fetches
@@ -191,12 +192,84 @@ a JWKS, and a clone-alone build needs no issuer. There is no third state.
 - A `@QuarkusTest` runs under the `test` profile, where qits-auth-core ships a dev user carrying
   `qits:admin` and `qits:system` — so the shipped `@RolesAllowed` pair is exercised rather than
   bypassed, with no `@TestSecurity` fabricating an identity no deployment produces.
-- **`PackagedSurfaceIT` is the only test that runs against the artifact**, and the only place the
-  identity contract is real. It hands the process `QITS_RESOURCE_DB_*` rather than restating the
-  datasource keys, so the jar's own `${…}` indirection is under test, and it reads the rows back
-  over JDBC. **Its peers are real calls to a dead loopback port** — the honest end-to-end proof that
-  a failure reaches a readable row with none of the suite's fakes involved. ITs are skipped by
-  default; `-DskipITs=false` runs against the fast-jar and `-Dnative` against the binary.
+- **Every claim about the ARTIFACT is an IT**, and there are two kinds. `PackagedSurfaceIT` is the
+  gate-off one: it hands the process `QITS_RESOURCE_DB_*` rather than restating the datasource keys,
+  so the jar's own `${…}` indirection is under test, it reads the rows back over JDBC, and **its
+  peers are real calls to a dead loopback port** — the honest end-to-end proof that a failure reaches
+  a readable row with none of the suite's fakes involved. It is also the only place the SPA is real.
+  The five **story** ITs are the gate-ON ones; see below. ITs are skipped by default;
+  `-DskipITs=false` runs against the fast-jar and `-Dnative` against the binary.
+- **`PackagedSurfaceIT.PackagedUnderTarget` is the profile base, and its `databaseUrl(property,
+  database)` is `protected` on purpose.** What a launched process needs in order to boot at all —
+  the mandatory triple, and the system-property parking that carries it across the two classloaders
+  a test profile is instantiated in — is one answer. A subclass brings its own database NAME and
+  never a second copy of the mechanism.
+
+## The userflow stories
+
+`service/src/test/java/.../stories/` is this repository's **user-story catalogue**: ten stories in
+five categories, written with the `qits-userflows` framework, emitting
+`service/target/userstories/` — steps, a description a person can read, and a **network diagram that
+is observed rather than narrated**. `.config/qits/ci-event-userflows.yml` runs them on every push and
+publishes the bundle as docs. They are proofs first and documentation second; nothing in them is
+drawn by hand.
+
+| class | category | what it says |
+|---|---|---|
+| `api.TokenValidationBootstrapIT` | authentication | the gate on, the JWKS fetched at boot, the plan served to a peer's bearer — and the three refusals on the cheapest read |
+| `stories.collection.GarbageCollectionRunIT` | garbage collection | a run end to end against six peers; a dry run; one run at a time |
+| `stories.faults.PeerFailureIT` | resilience | a pin read that answered 503, what it skipped and what it did not |
+| `stories.operations.RunHistoryIT` | operations | the plan before a run, the account after it |
+| `stories.refusals.DeletionRefusalIT` | refusals | the doors on the write surface, and what is not there |
+
+**ONE `@TestProfile` for all five**, `stories.support.StoryProfile`, so they are one launched
+process: one boot, one JWKS fetch, one database, one executor. Two profiles would be two
+orchestrators and a diagram whose startup traffic landed in whichever one happened to be running.
+
+**Class order is load-bearing and the package names carry it.** `UserflowClassOrderer` is a
+topological sort over `@UserflowRunsAfter` with ties broken by fully-qualified class name, so `api.*`
+runs before `stories.*` and inside `stories` it is `collection` → `faults` → `operations` →
+`refusals`. Two cumulative recordings are attributed by a cursor and therefore land in whichever
+story drains FIRST: the **startup JWKS fetch** (owned by the boot story) and the **outbound token
+mint**, which quarkus-oidc-client caches for the hour the stub's `expires_in` grants, so it happens
+on the first peer call of the whole catalogue and belongs to the first run story. Both are asserted
+where they land. Rename a package and you re-attribute them.
+
+**The far side is `stories.support.StoryPeers`** — one `com.sun` HTTP server impersonating all six
+peers plus the idp token endpoint, told apart by **path prefix**, recording `METHOD PATH STATUS` to
+`target/story-peers/access.log`, which the framework drains as a source. A process that only sends
+requests leaves its evidence nowhere else. Answers are a pure function of the request, with **one
+exception**: `refuse(prefix)` is a file the fault story writes and clears in a `finally`, because a
+gc run's ten paths are fixed by `GcProcess.steps()` and "qits-ci is down tonight" cannot be spelled
+as a url a story addresses. A file rather than a static field because the stub is started by the test
+profile, which a launched-artifact run instantiates in a different classloader from the story's.
+
+**NORMAL mode is the whole point.** The profile sets `qits.auth.machine.required=true`, which no
+other suite here does; a launched artifact has no `%test` dev user, so an anonymous request really is
+anonymous and every refusal is a claim only these tests can make. People arrive as
+`X-Qits-User`/`X-Qits-Roles`, machines as MockIdp-minted bearers.
+
+**What the stories cannot reach, stated rather than hidden:**
+
+- **the SCHEDULED trigger.** The clock stays off (`quarkus.scheduler.enabled=false`, inherited): a
+  cron at 03:00 would start an unattended run out of a CI JVM against peers that now answer, and a
+  recording could not tell its ten calls from a story's. Every run in the catalogue is `manual`, and
+  `GcSchedule`'s own gates — `gc.enabled`, `gc.dry-run`, the `SKIP` on concurrent execution, the
+  swallowed `RunAlreadyActiveException` — have **no test in this repository at all**. That is a real
+  gap, not a story's blind spot.
+- **a run against real infrastructure.** No docker socket, no registry, no second postgres: what
+  each peer would actually delete is that peer's own repository's claim. What is proved here is the
+  request that went out, the answer that came back and the row it became.
+- **the SPA.** Quinoa is off in the userflow pipeline, so `PackagedSurfaceIT` keeps every claim
+  about the client.
+
+**Editing rules.** A story class installs the taps with `StoryNetwork.install()` in `@BeforeAll` and
+must pin at least one edge, or a later edit could silently empty every diagram in the class. A story
+that starts a run must **await its closure** before returning — the peers' recording is drained at
+story end and an in-flight run would put its remaining calls in the next story's diagram. Every
+`assertEdgeCount` in the catalogue is exact: adding a request to a story means updating its count,
+and that is the assertion doing its job. Labels drop the query string, so two routes differing only
+in their query are ONE edge.
 
 ## The client
 

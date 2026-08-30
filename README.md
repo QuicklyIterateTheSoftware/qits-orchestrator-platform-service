@@ -179,9 +179,19 @@ builds the client. `./mvnw test` needs neither — Quinoa is off in test mode.
 `-Dquarkus.http.test-port=0` is not optional on the deployment host: Quarkus' default test port
 8081 is the platform's own npm registry there.
 
-Integration tests are skipped by default. `-DskipITs=false` runs `PackagedSurfaceIT` against the
-fast-jar; `-Dnative` builds the GraalVM binary (`.sdkmanrc` names `25.0.2-graalce`) and runs it
-against that.
+Integration tests are skipped by default. `-DskipITs=false` runs them against the fast-jar —
+`PackagedSurfaceIT`, and the five **user-story** classes that drive a whole gc run against an in-JVM
+stand-in for all six peers and emit `service/target/userstories/` (see `AGENTS.md`); `-Dnative`
+builds the GraalVM binary (`.sdkmanrc` names `25.0.2-graalce`) and runs it against that.
+
+The stories reach nothing outside the JVM they run in, so they need no docker and no credentials
+either. Reading them is the fastest way to see what a run actually does:
+
+```
+./mvnw verify -Dquarkus.quinoa=false -DskipITs=false \
+  "-Dit.test=TokenValidationBootstrapIT,GarbageCollectionRunIT,PeerFailureIT,RunHistoryIT,DeletionRefusalIT"
+open service/target/userstories/index.html
+```
 
 The image is `docker/Dockerfile`, built from the repo root with the client bundle already in the
 context — see `AGENTS.md`.
