@@ -1,8 +1,9 @@
 # THIS SERVICE FOLLOWS ITS FRONTEND. The client is a repository of its own, released on its own
 # train, and embedded here as a submodule at service/src/main/webui — so a frontend release changes
 # nothing until the gitlink in this repository moves. That is what this pipeline does: it fetches
-# the released tag, rewrites the gitlink, and pushes the result to `maintenance/frontend`, where
-# ci-event-maintenance-release.yml releases it like any other maintenance bump.
+# the released tag, rewrites the gitlink, and pushes the result to `maintenance/frontend`, which
+# qits-maintenance releases like any other maintenance bump — it asks the release door itself, so
+# this repository carries no trigger for it.
 #
 # ONE BRANCH, REUSED, force-pushed. Two frontend releases in a row must not leave two branches
 # behind; the second replaces the first, and whatever the first did not release is superseded.
