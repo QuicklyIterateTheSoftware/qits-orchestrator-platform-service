@@ -24,7 +24,7 @@ import java.util.Map;
  *
  * <h2>Its own database</h2>
  *
- * <p>The catalogue <b>writes</b>: four gc runs and forty-four step rows, then reads the history
+ * <p>The catalogue <b>writes</b>: four gc runs and sixty step rows, then reads the history
  * back. Sharing {@code PackagedSurfaceIT}'s database would make either suite's assertions depend on
  * whether the other had run, so the name here is this profile's own and the mechanism is the
  * parent's {@code databaseUrl}.
@@ -46,10 +46,10 @@ import java.util.Map;
  *   <li><b>{@code quarkus.oidc.auth-server-url}</b> — where the idp is. Discovery stays off and
  *       {@code jwks-path} stays {@code jwks}, joined onto this URL, so the shipped boot-time fetch
  *       is exercised rather than replaced.
- *   <li><b>the six target urls</b> — {@link StoryPeers}, replacing the parent's dead port. The
+ *   <li><b>the eight target urls</b> — {@link StoryPeers}, replacing the parent's dead port. The
  *       parent points them at a port nothing listens on because its claim is that a failure reaches
  *       a readable row; the claim here is what a run actually DOES, which needs peers that answer.
- *   <li><b>the six named oidc clients, ENABLED</b> — shipped off, because a platform running its
+ *   <li><b>the eight named oidc clients, ENABLED</b> — shipped off, because a platform running its
  *       peers open on qits-net behind forward-auth is a supported posture. Turning them on is what
  *       puts this service's own machine credential in the diagram, and it is the half of {@code
  *       PeerClient}'s "two credentials on every call" that a disabled client hides.
@@ -60,7 +60,7 @@ import java.util.Map;
  * <p>{@code quarkus.scheduler.enabled=false} is inherited from the parent and it is load-bearing
  * rather than tidy: {@code GcSchedule} is a cron at 03:00 UTC, and a CI run straddling that minute
  * would start an unattended deletion run out of a test JVM, against peers that now ANSWER. Nor
- * could a recording tell that run's ten calls from a story's — the paths are identical — so an
+ * could a recording tell that run's thirteen calls from a story's — the paths are identical — so an
  * arrow would appear or disappear depending on what time the suite ran, which is a {@code
  * networkHash} that never settles.
  *
@@ -85,7 +85,7 @@ public class StoryProfile extends PackagedSurfaceIT.PackagedUnderTarget {
    */
   public static final String CLIENT_SECRET = "story-orchestrator-client-secret";
 
-  /** The six peers, which are also the six oidc client names — {@code PeerTarget}'s constants. */
+  /** The eight peers, which are also the eight oidc client names — {@code PeerTarget}'s constants. */
   private static final Map<String, String> TARGET_URL_KEYS =
       Map.of(
           "artifacts", "qits.orchestrator.targets.artifacts-url",
@@ -93,7 +93,9 @@ public class StoryProfile extends PackagedSurfaceIT.PackagedUnderTarget {
           "ci", "qits.orchestrator.targets.ci-url",
           "deployments", "qits.orchestrator.targets.deployments-url",
           "projects", "qits.orchestrator.targets.projects-url",
-          "workspaces", "qits.orchestrator.targets.workspaces-url");
+          "workspaces", "qits.orchestrator.targets.workspaces-url",
+          "maintenance", "qits.orchestrator.targets.maintenance-url",
+          "configuration", "qits.orchestrator.targets.configuration-url");
 
   @Override
   public Map<String, String> getConfigOverrides() {
@@ -110,10 +112,10 @@ public class StoryProfile extends PackagedSurfaceIT.PackagedUnderTarget {
 
     TARGET_URL_KEYS.forEach(
         (peer, key) -> {
-          // Where the peer is — one stub answering as all six, told apart by path prefix.
+          // Where the peer is — one stub answering as all eight, told apart by path prefix.
           overrides.put(key, peers);
           // …and the credential this service presents to it. A token is cut FOR one service, which
-          // is why there are six clients rather than one; only the audience differs, and it is the
+          // is why there are eight clients rather than one; only the audience differs, and it is the
           // one value the shipped defaults deliberately leave unset because it is
           // environment-qualified. A story names the bare peer, which is what a single-environment
           // platform would.

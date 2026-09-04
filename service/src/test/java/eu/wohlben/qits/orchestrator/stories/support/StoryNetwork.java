@@ -28,7 +28,7 @@ import eu.wohlben.qits.userflows.NetworkTaps;
  * UserflowClassOrderer} sorts by fully-qualified class name, so {@code …orchestrator.api} runs
  * before {@code …orchestrator.stories.*} and the boot story owns the JWKS fetch; within {@code
  * stories}, {@code collection} runs before {@code faults}, {@code operations} and {@code refusals},
- * which is why the first run of the catalogue — and with it the six outbound token mints — belongs
+ * which is why the first run of the catalogue — and with it the eight outbound token mints — belongs
  * to {@code GarbageCollectionRunIT}. {@code @UserflowRunsAfter} states the ones that are real
  * dependencies as well as being true of the names.
  */

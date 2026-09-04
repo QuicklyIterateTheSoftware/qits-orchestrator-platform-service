@@ -34,6 +34,30 @@ final class GcSummaries {
         + bytes(cache.path("sizeBytes").asLong());
   }
 
+  /**
+   * {@code store 51.2 GB (oci 50.7 GB, docs 164.2 MB, sboms 112.6 MB)} — the registry's own bytes.
+   *
+   * <p><b>The registry plane is invisible to the docker read beside it.</b> {@link #usage} is the
+   * host's images, containers, volumes and buildkit cache; a registry blob is a row and a file that
+   * belong to qits-artifacts, so a run measured only by {@code docker system df} reports a platform
+   * that is not growing while the store behind it does. The 2026-09-04 storage incident was 50 GB
+   * nobody's receipt showed.
+   */
+  static String storeUsage(JsonNode body) {
+    if (body == null) {
+      return "no store figures in the answer";
+    }
+    return "store "
+        + bytes(body.path("diskTotalBytes").asLong())
+        + " (oci "
+        + bytes(body.path("ociUnionBytes").asLong())
+        + ", docs "
+        + bytes(body.path("docsBytes").asLong())
+        + ", sboms "
+        + bytes(body.path("sbomBytes").asLong())
+        + ")";
+  }
+
   /** {@code 51 repositories in the catalogue} — the iteration set of the branch sweep. */
   static String repositoryCatalogue(JsonNode body) {
     int repositories = body == null ? 0 : body.path("repositories").size();
@@ -83,6 +107,29 @@ final class GcSummaries {
       return name + " pins nothing";
     }
     return name + " " + version + (previous.isBlank() ? "" : " (previous " + previous + ")");
+  }
+
+  /**
+   * {@code 412 manifest pins across 47 repositories} — the maintenance dependency-pin answer: what
+   * repositories' mains still reference, which no deployment and no release date can say.
+   */
+  static String dependencyPins(JsonNode body) {
+    int pins = body == null ? 0 : body.path("pins").size();
+    int repositories = body == null ? 0 : body.path("repositories").size();
+    return pins
+        + (pins == 1 ? " manifest pin across " : " manifest pins across ")
+        + repositories
+        + (repositories == 1 ? " repository" : " repositories");
+  }
+
+  /**
+   * {@code 4 configured container images} — the configuration pin answer: what a workspace, editor
+   * or agent launch would pull.
+   */
+  static String imagePins(JsonNode body) {
+    int images = body == null ? 0 : body.path("pins").size();
+    return images
+        + (images == 1 ? " configured container image" : " configured container images");
   }
 
   /** {@code 128 identities, 19.3 GB reclaimable, executable=true} — the artifacts plan answer. */

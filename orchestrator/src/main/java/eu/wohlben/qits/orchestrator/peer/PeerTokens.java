@@ -12,7 +12,7 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 /**
- * The six named oidc clients — one per peer — and the reason there are six rather than one.
+ * The eight named oidc clients — one per peer — and the reason there are eight rather than one.
  *
  * <p><b>A token is cut FOR one service.</b> qits-artifacts refuses a bearer whose audience names
  * qits-containers, so a single client would only be able to talk to one peer. The client id is the
@@ -63,7 +63,15 @@ public class PeerTokens {
   @NamedOidcClient("workspaces")
   OidcClient workspaces;
 
-  /** Caches and refreshes each peer's token, so a nine-step run is not nine token requests. */
+  @Inject
+  @NamedOidcClient("maintenance")
+  OidcClient maintenance;
+
+  @Inject
+  @NamedOidcClient("configuration")
+  OidcClient configuration;
+
+  /** Caches and refreshes each peer's token, so a fifteen-step run is not fifteen token requests. */
   private final Map<String, TokensHelper> helpers =
       Map.of(
           PeerTarget.ARTIFACTS, new TokensHelper(),
@@ -71,7 +79,9 @@ public class PeerTokens {
           PeerTarget.CI, new TokensHelper(),
           PeerTarget.DEPLOYMENTS, new TokensHelper(),
           PeerTarget.PROJECTS, new TokensHelper(),
-          PeerTarget.WORKSPACES, new TokensHelper());
+          PeerTarget.WORKSPACES, new TokensHelper(),
+          PeerTarget.MAINTENANCE, new TokensHelper(),
+          PeerTarget.CONFIGURATION, new TokensHelper());
 
   /** The bearer for one peer, or empty when its client is disabled or cannot mint. */
   public Optional<String> token(String target) {
@@ -111,6 +121,8 @@ public class PeerTokens {
       case PeerTarget.DEPLOYMENTS -> deployments;
       case PeerTarget.PROJECTS -> projects;
       case PeerTarget.WORKSPACES -> workspaces;
+      case PeerTarget.MAINTENANCE -> maintenance;
+      case PeerTarget.CONFIGURATION -> configuration;
       default -> null;
     };
   }

@@ -25,28 +25,49 @@ so what comes after it still runs.
 | id | target | call | depends on |
 |---|---|---|---|
 | `usage.before` | containers | `GET /containers/api/gc/usage` | — |
+| `artifacts.usage.before` | artifacts | `GET /artifacts/api/store/summary` | — |
 | `pins.deployments` | deployments | `GET /platform-deployments/api/pins` | — |
 | `pins.ci` | ci | `GET /ci/api/daemon` | — |
-| `artifacts.plan` | artifacts | `POST /artifacts/api/gc/plan {pins}` | pins.deployments, pins.ci |
-| `artifacts.sweep` | artifacts | `POST /artifacts/api/gc/sweep {pins}` — SKIPPED `dry run` on a dry run | artifacts.plan |
+| `pins.dependencies` | maintenance | `GET /maintenance/api/pins` | — |
+| `pins.images` | configuration | `GET /configuration/api/pins` | — |
+| `artifacts.plan` | artifacts | `POST /artifacts/api/gc/plan {pins}` | pins.deployments, pins.ci, pins.dependencies, pins.images |
+| `artifacts.sweep` | artifacts | `POST /artifacts/api/gc/sweep {pins}` — SKIPPED `dry run` on a dry run | artifacts.plan, pins.deployments, pins.ci, pins.dependencies, pins.images |
 | `containers.images` | containers | `POST /containers/api/gc/images` | pins.deployments |
 | `containers.volumes` | containers | `POST /containers/api/gc/volumes` | usage.before |
 | `containers.build-cache` | containers | `POST /containers/api/gc/build-cache` | usage.before |
 | `repos.catalogue` | projects | `GET /projects/api/repositories` | — |
 | `branches.sweep` | workspaces | `POST /workspaces/api/gc/branches {dryRun, repositories, keepPrefixes}` | repos.catalogue |
+| `artifacts.usage.after` | artifacts | `GET /artifacts/api/store/summary` | artifacts.sweep |
 | `usage.after` | containers | `GET /containers/api/gc/usage` | artifacts.sweep, containers.images, containers.volumes, containers.build-cache |
 
 **The pins are read once and handed on.** `artifacts.plan` and `artifacts.sweep` send
 
 ```json
-{"pins": {"deployments": <the deployments answer, verbatim>,
-          "ciDaemon":    <the ci answer, verbatim>}}
+{"pins": {"deployments":      <the deployments answer, verbatim>,
+          "ciDaemon":         <the ci answer, verbatim>,
+          "dependencies":     <the maintenance answer, verbatim>,
+          "configuredImages": <the configuration answer, verbatim>}}
 ```
 
 qits-artifacts uses these instead of its own HTTP readers; a missing member means that source is
 unanswered, which makes the plan not executable and aborts a sweep. The readers moved here because
 this is the one component holding an idp client for every peer — theirs had no credential and were
 401-ing.
+
+**Two of the four sources are CONSUMPTION rather than deployment**, and that is why the first two
+could not stand in for them: nothing deploys the library a pom pins, and nothing deploys the
+workspace image a person's next click pulls. `pins.dependencies` is what every repository's main
+still references in its manifests (qits-platform-maintenance); `pins.images` is the configured
+container image versions a workspace, editor or agent launch resolves (qits-configuration). Before
+they were read, all that kept either alive was how recently somebody happened to ask for it.
+
+**The registry plane is measured too, and it has its own pair.** `artifacts.usage.before` and
+`artifacts.usage.after` read `GET /artifacts/api/store/summary` — `diskTotalBytes`, `ociUnionBytes`,
+`docsBytes`, `sbomBytes` — because a registry blob is a row and a file in qits-artifacts' own store
+and `docker system df` cannot see one of them. A run whose whole receipt was the docker read
+reported a platform that was not growing while the registry did: the 2026-09-04 storage incident was
+50 GB nobody's receipt showed. The after-step hangs off `artifacts.sweep` alone, so a container
+prune that failed still leaves the registry's own before-and-after in the run.
 
 **Only what needs a pin waits for one.** `containers.build-cache` hangs off `usage.before`, not
 off the image sweep: a prune has no keep-set, so a broken pin read must not cost the platform the
@@ -121,6 +142,8 @@ and overridable by environment without a rebuild.
 | `qits.orchestrator.targets.deployments-url` | `http://qits-platform-deployments:8080` | where the deployer is |
 | `qits.orchestrator.targets.projects-url` | `http://qits-projects:8080` | where the repository catalogue is |
 | `qits.orchestrator.targets.workspaces-url` | `http://qits-workspaces:8080` | where branch semantics live |
+| `qits.orchestrator.targets.maintenance-url` | `http://qits-platform-maintenance:8080` | where the dependency pins are |
+| `qits.orchestrator.targets.configuration-url` | `http://qits-configuration:8080` | where the configured image pins are |
 | `qits.orchestrator.gc.enabled` | `true` | whether the CLOCK may start a run |
 | `qits.orchestrator.gc.cron` | `0 0 3 * * ?` | when it does: 03:00 every day |
 | `qits.orchestrator.gc.time-zone` | `UTC` | the zone the cron is read in (the platform's convention) |
@@ -142,14 +165,16 @@ left a 13.7 GB bootstrap builder untouched every night — it was smaller than t
 shared keep-storage never reached it. qits-containers falls back to `keepStorageBytes` when
 `builderKeepStorageBytes` is absent.
 
-**Three tier services by configured url.** qits-artifacts, qits-containers and qits-ci are per
-environment (`dev-qits-artifacts`) while this service is platform tier, so a live platform injects
-the qualified names. Known debt, the same one qits-configuration carries.
+**Four tier services by configured url.** qits-artifacts, qits-containers, qits-ci and
+qits-configuration are per environment (`dev-qits-artifacts`, `dev-qits-configuration`) while this
+service is platform tier, so a live platform injects the qualified names. Known debt, the same one
+qits-configuration carries.
 
-**Outbound credentials** are four named oidc clients — `artifacts`, `containers`, `ci`,
-`deployments` — all `client-id=qits-platform-orchestrator`, all shipped `client-enabled=false`. A
-token is cut for one service, which is why there are four; only the audience differs, and it is the
-one value not defaulted, because it is environment-qualified. A deployment turns one on with
+**Outbound credentials** are eight named oidc clients — `artifacts`, `containers`, `ci`,
+`deployments`, `projects`, `workspaces`, `maintenance`, `configuration` — all
+`client-id=qits-platform-orchestrator`, all shipped `client-enabled=false`. A token is cut for one
+service, which is why there are eight; only the audience differs, and it is the one value not
+defaulted, because it is environment-qualified. A deployment turns one on with
 
 ```
 QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED=true
@@ -181,7 +206,7 @@ builds the client. `./mvnw test` needs neither — Quinoa is off in test mode.
 
 Integration tests are skipped by default. `-DskipITs=false` runs them against the fast-jar —
 `PackagedSurfaceIT`, and the five **user-story** classes that drive a whole gc run against an in-JVM
-stand-in for all six peers and emit `service/target/userstories/` (see `AGENTS.md`); `-Dnative`
+stand-in for all eight peers and emit `service/target/userstories/` (see `AGENTS.md`); `-Dnative`
 builds the GraalVM binary (`.sdkmanrc` names `25.0.2-graalce`) and runs it against that.
 
 The stories reach nothing outside the JVM they run in, so they need no docker and no credentials

@@ -91,8 +91,9 @@ close, and no second run of that kind would ever be allowed again.
 ## Fail-closed is an edge, not an `if`
 
 Nothing deletes against a keep-set it could not read, and the mechanism is the dependency, not a
-check inside a step. `artifacts.plan`, `artifacts.sweep` and `containers.images` depend on the pin
-reads, so a failed pin read skips all three before a body runs. `GcProcess.imagesBody` would build
+check inside a step. `artifacts.plan` and `artifacts.sweep` depend on all four pin reads and
+`containers.images` on the deployment one, so a failed pin read skips what it protects before a body
+runs. `GcProcess.imagesBody` would build
 an empty `keep` from an unreadable pin answer — and never gets the chance to. Keep both: the edge is
 the guarantee, the empty-set path is the belt.
 
@@ -120,7 +121,7 @@ process whose steps had to catch would put half its outcomes on a path nobody re
 that matters belongs to the call: an anonymous call to a guarded peer comes back 401 and the step
 records the url and the status, which is more useful than a mint failure one layer earlier.
 
-**Six named clients, one per peer**, because a token is cut FOR one service. The audience is the
+**Eight named clients, one per peer**, because a token is cut FOR one service. The audience is the
 one value the shipped defaults leave unset: it is environment-qualified, and an image every
 environment shares must not name a tier it may not be running in. The unnamed default client is
 disabled and stays disabled — the extension creates it whether or not anything injects it.

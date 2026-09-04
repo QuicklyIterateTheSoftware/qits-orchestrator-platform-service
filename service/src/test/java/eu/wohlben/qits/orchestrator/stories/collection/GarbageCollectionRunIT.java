@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.TestMethodOrder;
 
 /**
- * <b>The gc run</b> — the one technical process this platform has, driven end to end against six
+ * <b>The gc run</b> — the one technical process this platform has, driven end to end against eight
  * peers that answer.
  *
  * <p>This is the catalogue's centre, because it is the only place the whole design is visible at
@@ -48,11 +48,11 @@ import org.junit.jupiter.api.TestMethodOrder;
  * but its own run log, and makes no decision an owner has not published as an API. Everything it
  * does therefore happens on the far side of a socket, and a diagram of what it did is the only
  * complete account of a run there is. {@link StoryPeers} is that far side — one stub answering as
- * qits-containers, qits-artifacts, qits-ci, qits-platform-deployments, qits-projects and
- * qits-workspaces, told apart by path prefix, plus qits-platform-idp for the credential this
- * service presents to each of them.
+ * qits-containers, qits-artifacts, qits-ci, qits-platform-deployments, qits-projects,
+ * qits-workspaces, qits-platform-maintenance and qits-configuration, told apart by path prefix,
+ * plus qits-platform-idp for the credential this service presents to each of them.
  *
- * <p><b>Three stories, three runs, and each one is a different sentence about the same eleven
+ * <p><b>Three stories, three runs, and each one is a different sentence about the same fifteen
  * steps:</b>
  *
  * <ol>
@@ -115,17 +115,24 @@ public class GarbageCollectionRunIT {
       service contributes is ORDER and a PIN SET — it deletes nothing itself.
 
       An operator presses Run now. The answer is a 202 and an id, because the work is minutes of
-      somebody else's pruning; the browser then polls the run while it happens. Eleven steps run in
-      declaration order: the disk is measured, the two pin reads say what must survive, the registry
-      is planned and swept, host images, orphan volumes and build cache are collected, the
-      repository catalogue is read and merged branches are swept, and the disk is measured again.
+      somebody else's pruning; the browser then polls the run while it happens. Fifteen steps run in
+      declaration order: the disk and the registry store are measured, the four pin reads say what
+      must survive, the registry is planned and swept, host images, orphan volumes and build cache
+      are collected, the repository catalogue is read and merged branches are swept, and both stores
+      are measured again.
 
       The pins are the point. A pin is something a collection must not delete — an image sha a
-      restart or a rollback would pull, the ci daemon binary a run would launch — and they are read
+      restart or a rollback would pull, the ci daemon binary a run would launch, a version a
+      repository's main still references, a container image a launch would pull — and they are read
       ONCE and handed to every deleter, so every deleter judges against one answer taken at one
       moment. They are read here rather than by qits-artifacts because this is the one component
       that holds an identity for every peer; the readers that used to live over there had no
       credential and were being refused.
+
+      Two of the four are CONSUMPTION rather than deployment, and nothing else on the platform can
+      answer for them: no deployment names the library a pom pins, and none names the workspace
+      image a person's next click pulls. Before they were read, the only thing keeping either alive
+      was how recently somebody happened to ask for it.
 
       What each step reports is READ out of the peer's own answer and never derived. A summary that
       recomputed "what would die" would be a second policy, and two policies in one report is
@@ -147,11 +154,11 @@ public class GarbageCollectionRunIT {
     assertEquals("SUCCEEDED", run.getString("status"), "the run did not succeed: " + run.prettify());
     story
         .note(
-            "the browser polls the run while it happens; eleven steps later it is SUCCEEDED and the"
-                + " run's own summary is one line per step")
+            "the browser polls the run while it happens; fifteen steps later it is SUCCEEDED and"
+                + " the run's own summary is one line per step")
         .as("run-succeeded");
 
-    // The eleven steps, each with the line it read out of its peer's answer. Asserting the SENTENCE
+    // The fifteen steps, each with the line it read out of its peer's answer. Asserting the SENTENCE
     // rather than a status is what pins "computes nothing": every figure below is a number the
     // owner of that store reported, quoted back.
     operator()
@@ -160,15 +167,24 @@ public class GarbageCollectionRunIT {
         .get(StoryTarget.runPath(id))
         .then()
         .statusCode(200)
-        .body("steps.size()", equalTo(11))
+        .body("steps.size()", equalTo(15))
         .body("steps.status", everyItem(equalTo("SUCCEEDED")))
         .body(
             StoryRuns.stepPath("usage.before") + ".summary",
             equalTo("images 43.5 GB (19.3 GB reclaimable), build cache 35.1 GB"))
+        .body(
+            StoryRuns.stepPath("artifacts.usage.before") + ".summary",
+            equalTo("store 51.2 GB (oci 50.7 GB, docs 164.2 MB, sboms 112.6 MB)"))
         .body(StoryRuns.stepPath("pins.deployments") + ".summary", equalTo("1 application pinned"))
         .body(
             StoryRuns.stepPath("pins.ci") + ".summary",
             equalTo("qits-ci-daemon 2026.815.120000 (previous 2026.814.101010)"))
+        .body(
+            StoryRuns.stepPath("pins.dependencies") + ".summary",
+            equalTo("1 manifest pin across 1 repository"))
+        .body(
+            StoryRuns.stepPath("pins.images") + ".summary",
+            equalTo("1 configured container image"))
         .body(
             StoryRuns.stepPath("artifacts.plan") + ".summary",
             equalTo("128 identities, 19.3 GB reclaimable, executable=true"))
@@ -191,6 +207,9 @@ public class GarbageCollectionRunIT {
             StoryRuns.stepPath("branches.sweep") + ".summary",
             equalTo("removed 1 of 214 branches across 1 repositories"))
         .body(
+            StoryRuns.stepPath("artifacts.usage.after") + ".summary",
+            equalTo("store 51.2 GB (oci 50.7 GB, docs 164.2 MB, sboms 112.6 MB)"))
+        .body(
             StoryRuns.stepPath("usage.after") + ".summary",
             equalTo("images 43.5 GB (19.3 GB reclaimable), build cache 35.1 GB"));
     story
@@ -206,17 +225,23 @@ public class GarbageCollectionRunIT {
     String planRequest =
         run.getString(StoryRuns.stepPath("artifacts.plan") + ".request.body");
     assertTrue(
-        planRequest.contains("\"deployments\"") && planRequest.contains("\"ciDaemon\""),
-        "the registry plan did not carry both pin sources: " + planRequest);
+        planRequest.contains("\"deployments\"")
+            && planRequest.contains("\"ciDaemon\"")
+            && planRequest.contains("\"dependencies\"")
+            && planRequest.contains("\"configuredImages\""),
+        "the registry plan did not carry all four pin sources: " + planRequest);
     assertTrue(
         planRequest.contains(StoryPeers.PINNED_SHA)
-            && planRequest.contains(StoryPeers.CI_DAEMON_VERSION),
+            && planRequest.contains(StoryPeers.CI_DAEMON_VERSION)
+            && planRequest.contains(StoryPeers.MANIFEST_PIN_VERSION)
+            && planRequest.contains(StoryPeers.CONFIGURED_IMAGE_VERSION),
         "the pins were re-shaped rather than handed on verbatim: " + planRequest);
     story
         .note(
-            "the two pin answers travel into the registry plan VERBATIM — the deployer's document"
-                + " and the ci daemon's, re-embedded rather than re-shaped, because both contracts"
-                + " belong to other repositories")
+            "all four pin answers travel into the registry plan VERBATIM — the deployer's document,"
+                + " the ci daemon's, the manifest dependencies every repository's main references"
+                + " and the configured container images — re-embedded rather than re-shaped,"
+                + " because every one of those contracts belongs to another repository")
         .as("pins-handed-on-verbatim");
 
     // The one place a pin answer IS re-shaped, and it is a translation rather than a projection: a
@@ -277,7 +302,7 @@ public class GarbageCollectionRunIT {
     JsonPath run = StoryRuns.detail(operator(), id);
     assertEquals("SUCCEEDED", run.getString("status"), "the dry run did not succeed: " + run.prettify());
     story
-        .note("the operator asks for a dry run: the same eleven steps, with dryRun on the request")
+        .note("the operator asks for a dry run: the same fifteen steps, with dryRun on the request")
         .as("dry-run-accepted");
 
     operator()
@@ -401,18 +426,20 @@ public class GarbageCollectionRunIT {
     // route rather than how impatient the watching was.
     from(COLLECTED_SLUG, StoryIdentities.OPERATOR, "POST " + StoryTarget.GC_RUNS_PATH + " -> 202");
     from(COLLECTED_SLUG, StoryIdentities.OPERATOR, "GET " + StoryTarget.RUN_LABEL_PATH + " -> 200");
-    // …and what the run sent. Ten calls to six owners, drawn from the far side's own recording,
-    // because a process that only sends requests leaves its evidence nowhere else.
+    // …and what the run sent. Thirteen calls to eight owners, drawn from the far side's own
+    // recording, because a process that only sends requests leaves its evidence nowhere else.
     everyPeerCallOf(COLLECTED_SLUG);
     to(COLLECTED_SLUG, StoryPeers.ARTIFACTS, StoryPeers.written(StoryPeers.SWEEP_PATH));
-    // The credential this service presents to all six. Six clients minted six tokens on this run
-    // and they are ONE arrow — an edge is (kind, from, to, label) and the six agree in all four —
-    // and the mint is cached for an hour, so no later story carries it.
+    // The credential this service presents to all eight. Eight clients minted eight tokens on this
+    // run and they are ONE arrow — an edge is (kind, from, to, label) and the eight agree in all
+    // four — and the mint is cached for an hour, so no later story carries it.
     to(COLLECTED_SLUG, StoryPeers.IDP, StoryPeers.written(StoryPeers.TOKEN_PATH));
-    // TWO in, eleven out. The disk is measured twice and draws once, because usage.before and
-    // usage.after are deliberately the same call: the run's own measurement of what it achieved,
-    // taken by the component that owns the store rather than added up from what each step claimed.
-    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, COLLECTED_SLUG, 13);
+    // TWO in, fourteen out. Each store is measured twice and draws once, because the before and the
+    // after of a store are deliberately the same call: the run's own measurement of what it
+    // achieved, taken by the component that owns the store rather than added up from what each step
+    // claimed. There are two such pairs now — the host's disk and the registry's bytes — and the
+    // second exists because the first cannot see it.
+    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, COLLECTED_SLUG, 16);
     ReportAssertions.assertOnlyEdgesFrom(
         CATEGORY_SLUG, COLLECTED_SLUG, List.of(StoryIdentities.OPERATOR, StoryTarget.SERVICE));
 
@@ -425,11 +452,12 @@ public class GarbageCollectionRunIT {
     from(MEASURED_SLUG, StoryIdentities.OPERATOR, "POST " + StoryTarget.GC_RUNS_PATH + " -> 202");
     from(MEASURED_SLUG, StoryIdentities.OPERATOR, "GET " + StoryTarget.RUN_LABEL_PATH + " -> 200");
     everyPeerCallOf(MEASURED_SLUG);
-    // ELEVEN, one fewer than the real run's twelve outbound-and-inbound set: the registry sweep is
-    // the only arrow a dry run does not draw. qits-artifacts is still reached — the PLAN is what a
-    // dry run is for — so this is a count rather than an absence, and the count is the assertion
-    // that would notice a withheld step quietly making its call after all.
-    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, MEASURED_SLUG, 11);
+    // FOURTEEN, one fewer than the real run's fifteen outbound-and-inbound set: the registry sweep
+    // is the only arrow a dry run does not draw. qits-artifacts is still reached — the PLAN is what
+    // a dry run is for, and so is the store measurement either side of it — so this is a count
+    // rather than an absence, and the count is the assertion that would notice a withheld step
+    // quietly making its call after all.
+    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, MEASURED_SLUG, 14);
     ReportAssertions.assertOnlyEdgesFrom(
         CATEGORY_SLUG, MEASURED_SLUG, List.of(StoryIdentities.OPERATOR, StoryTarget.SERVICE));
 
@@ -444,10 +472,10 @@ public class GarbageCollectionRunIT {
     from(SERIALISED_SLUG, StoryIdentities.OPERATOR, "GET " + StoryTarget.RUN_LABEL_PATH + " -> 200");
     everyPeerCallOf(SERIALISED_SLUG);
     to(SERIALISED_SLUG, StoryPeers.ARTIFACTS, StoryPeers.written(StoryPeers.SWEEP_PATH));
-    // THIRTEEN: three doors and ten peer calls. The refused caller added an arrow to this service
-    // and none beyond it — which is the point of the story, and the reason the count is asserted
-    // rather than only the 409.
-    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, SERIALISED_SLUG, 13);
+    // SIXTEEN: three doors and thirteen peer calls. The refused caller added an arrow to this
+    // service and none beyond it — which is the point of the story, and the reason the count is
+    // asserted rather than only the 409.
+    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, SERIALISED_SLUG, 16);
     ReportAssertions.assertOnlyEdgesFrom(
         CATEGORY_SLUG,
         SERIALISED_SLUG,
@@ -461,9 +489,14 @@ public class GarbageCollectionRunIT {
     }
   }
 
-  /** The nine calls every gc run makes whatever else is true of it — the sweep is the tenth. */
+  /** The twelve calls every gc run makes whatever else is true of it — the sweep is the thirteenth. */
   private static void everyPeerCallOf(String slug) {
     to(slug, StoryPeers.CONTAINERS, StoryPeers.read(StoryPeers.USAGE_PATH));
+    // The registry's own bytes, read twice and drawn once — the plane the docker measurement cannot
+    // see, and the one a night of unnoticed growth was hiding in.
+    to(slug, StoryPeers.ARTIFACTS, StoryPeers.read(StoryPeers.STORE_PATH));
+    to(slug, StoryPeers.MAINTENANCE, StoryPeers.read(StoryPeers.DEPENDENCY_PINS_PATH));
+    to(slug, StoryPeers.CONFIGURATION, StoryPeers.read(StoryPeers.IMAGE_PINS_PATH));
     to(slug, StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.IMAGES_PATH));
     to(slug, StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.VOLUMES_PATH));
     to(slug, StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.BUILD_CACHE_PATH));

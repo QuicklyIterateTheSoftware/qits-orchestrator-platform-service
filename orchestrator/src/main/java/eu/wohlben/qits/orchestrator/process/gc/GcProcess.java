@@ -26,9 +26,17 @@ import java.util.List;
  * <h2>The pins, and why they are read here</h2>
  *
  * <p>A pin is something that must survive a collection: an image sha a restart or a rollback would
- * pull ({@code pins.deployments}) and the ci daemon binary a run would launch ({@code pins.ci}).
- * They are read ONCE per run and handed to every deleter, so every deleter judges against one
- * answer taken at one moment.
+ * pull ({@code pins.deployments}), the ci daemon binary a run would launch ({@code pins.ci}), a
+ * version a repository's main still references in a manifest ({@code pins.dependencies}) and a
+ * container image a workspace, editor or agent launch would pull ({@code pins.images}). They are
+ * read ONCE per run and handed to every deleter, so every deleter judges against one answer taken
+ * at one moment.
+ *
+ * <p><b>The last two are CONSUMPTION rather than deployment</b>, which is why neither of the first
+ * two could stand in for them: nothing deploys a library a pom pins, and nothing deploys the
+ * workspace image a person's next click pulls. A release-age rule cannot see either, so before
+ * these two steps existed the only thing keeping them alive was how recently somebody happened to
+ * ask for them.
  *
  * <p><b>They are read here because this is the one component that holds an idp client for every
  * peer.</b> qits-artifacts' own HTTP pin readers stay as its no-body fallback, and they are exactly
@@ -36,24 +44,31 @@ import java.util.List;
  * to the caller that can authenticate.
  *
  * <p><b>Fail-closed, and the edges are what makes it so.</b> A failed pin read skips every step that
- * would delete on the strength of that pin — the artifacts plan and sweep, and the image sweep —
- * while the volume sweep and the build-cache prune, which need no pins, still run. Nothing deletes
- * against a keep-set it could not read, and nothing that needs no keep-set is stopped by one.
+ * would delete on the strength of that pin — the artifacts plan and sweep depend on all FOUR pin
+ * reads, the image sweep on the deployments one — while the volume sweep and the build-cache prune,
+ * which need no pins, still run. Nothing deletes against a keep-set it could not read, and nothing
+ * that needs no keep-set is stopped by one. A pin source added to the body is a pin source added to
+ * those two dependency lists in the same commit, or the registry would collect against a keep-set
+ * missing whatever that source protects.
  *
  * <h2>The steps</h2>
  *
  * <pre>
- * usage.before        containers   GET  /containers/api/gc/usage
- * pins.deployments    deployments  GET  /platform-deployments/api/pins
- * pins.ci             ci           GET  /ci/api/daemon
- * artifacts.plan      artifacts    POST /artifacts/api/gc/plan {pins}      ← pins.*
- * artifacts.sweep     artifacts    POST /artifacts/api/gc/sweep {pins}     ← artifacts.plan
- * containers.images   containers   POST /containers/api/gc/images          ← pins.deployments
- * containers.volumes  containers   POST /containers/api/gc/volumes         ← usage.before
- * containers.build-cache containers POST /containers/api/gc/build-cache    ← usage.before
- * repos.catalogue     projects     GET  /projects/api/repositories
- * branches.sweep      workspaces   POST /workspaces/api/gc/branches        ← repos.catalogue
- * usage.after         containers   GET  /containers/api/gc/usage           ← everything that frees disk
+ * usage.before           containers     GET  /containers/api/gc/usage
+ * artifacts.usage.before artifacts      GET  /artifacts/api/store/summary
+ * pins.deployments       deployments    GET  /platform-deployments/api/pins
+ * pins.ci                ci             GET  /ci/api/daemon
+ * pins.dependencies      maintenance    GET  /maintenance/api/pins
+ * pins.images            configuration  GET  /configuration/api/pins
+ * artifacts.plan         artifacts      POST /artifacts/api/gc/plan {pins}   ← pins.*
+ * artifacts.sweep        artifacts      POST /artifacts/api/gc/sweep {pins}  ← artifacts.plan, pins.*
+ * containers.images      containers     POST /containers/api/gc/images       ← pins.deployments
+ * containers.volumes     containers     POST /containers/api/gc/volumes      ← usage.before
+ * containers.build-cache containers     POST /containers/api/gc/build-cache  ← usage.before
+ * repos.catalogue        projects       GET  /projects/api/repositories
+ * branches.sweep         workspaces     POST /workspaces/api/gc/branches     ← repos.catalogue
+ * artifacts.usage.after  artifacts      GET  /artifacts/api/store/summary    ← artifacts.sweep
+ * usage.after            containers     GET  /containers/api/gc/usage        ← everything that frees disk
  * </pre>
 
  * <p><b>The branch sweep is the same pin pattern, one store further out.</b> The repository
@@ -66,6 +81,15 @@ import java.util.List;
  * <p>{@code usage.before} and {@code usage.after} are the same call twice, and the pair is the
  * point: the run's own measurement of what it achieved, taken by the component that owns the store
  * rather than added up from what each step claimed.
+ *
+ * <p><b>{@code artifacts.usage.*} is the second plane of the same measurement, and it exists
+ * because the first one cannot see it.</b> The registry's bytes are rows in qits-artifacts' postgres
+ * and files behind them — invisible to the docker read, which knows only the host's images,
+ * containers, volumes and cache. A run whose whole receipt was {@code docker system df} therefore
+ * reported a platform that was not growing while the registry did: the 2026-09-04 storage incident
+ * was 50 GB nobody's receipt showed. Its after-step hangs off the registry sweep alone rather than
+ * off everything that frees disk, so a broken container prune still leaves the registry's own
+ * before-and-after in the run.
  */
 @ApplicationScoped
 public class GcProcess implements TechnicalProcess {
@@ -74,8 +98,11 @@ public class GcProcess implements TechnicalProcess {
   public static final String KIND = "gc";
 
   static final String USAGE_BEFORE = "usage.before";
+  static final String ARTIFACTS_USAGE_BEFORE = "artifacts.usage.before";
   static final String PINS_DEPLOYMENTS = "pins.deployments";
   static final String PINS_CI = "pins.ci";
+  static final String PINS_DEPENDENCIES = "pins.dependencies";
+  static final String PINS_IMAGES = "pins.images";
   static final String ARTIFACTS_PLAN = "artifacts.plan";
   static final String ARTIFACTS_SWEEP = "artifacts.sweep";
   static final String CONTAINERS_IMAGES = "containers.images";
@@ -83,9 +110,12 @@ public class GcProcess implements TechnicalProcess {
   static final String CONTAINERS_BUILD_CACHE = "containers.build-cache";
   static final String REPOS_CATALOGUE = "repos.catalogue";
   static final String BRANCHES_SWEEP = "branches.sweep";
+  static final String ARTIFACTS_USAGE_AFTER = "artifacts.usage.after";
   static final String USAGE_AFTER = "usage.after";
 
   private static final String USAGE_PATH = "/containers/api/gc/usage";
+
+  private static final String STORE_PATH = "/artifacts/api/store/summary";
 
   private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -105,7 +135,8 @@ public class GcProcess implements TechnicalProcess {
   public String description() {
     return "Reads the platform's pin set once, then asks every store's own owner to delete what"
         + " nothing pins: registry identities and blobs (qits-artifacts), host images, orphan"
-        + " volumes and buildkit cache (qits-containers). Measures disk before and after.";
+        + " volumes and buildkit cache (qits-containers). Measures host disk and the registry"
+        + " store before and after.";
   }
 
   @Override
@@ -120,6 +151,15 @@ public class GcProcess implements TechnicalProcess {
                 StepResult.of(
                     context.peers().get(PeerTarget.CONTAINERS, USAGE_PATH),
                     answer -> GcSummaries.usage(answer.json()))),
+        new StepDefinition(
+            ARTIFACTS_USAGE_BEFORE,
+            "Registry store before",
+            PeerTarget.ARTIFACTS,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.ARTIFACTS, STORE_PATH),
+                    answer -> GcSummaries.storeUsage(answer.json()))),
         new StepDefinition(
             PINS_DEPLOYMENTS,
             "Deployment pins",
@@ -139,10 +179,28 @@ public class GcProcess implements TechnicalProcess {
                     context.peers().get(PeerTarget.CI, "/ci/api/daemon"),
                     answer -> GcSummaries.ciPin(answer.json()))),
         new StepDefinition(
+            PINS_DEPENDENCIES,
+            "Dependency pins",
+            PeerTarget.MAINTENANCE,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.MAINTENANCE, "/maintenance/api/pins"),
+                    answer -> GcSummaries.dependencyPins(answer.json()))),
+        new StepDefinition(
+            PINS_IMAGES,
+            "Configured image pins",
+            PeerTarget.CONFIGURATION,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.CONFIGURATION, "/configuration/api/pins"),
+                    answer -> GcSummaries.imagePins(answer.json()))),
+        new StepDefinition(
             ARTIFACTS_PLAN,
             "Plan the registry collection",
             PeerTarget.ARTIFACTS,
-            List.of(PINS_DEPLOYMENTS, PINS_CI),
+            List.of(PINS_DEPLOYMENTS, PINS_CI, PINS_DEPENDENCIES, PINS_IMAGES),
             context ->
                 StepResult.of(
                     context
@@ -153,7 +211,12 @@ public class GcProcess implements TechnicalProcess {
             ARTIFACTS_SWEEP,
             "Sweep the registry",
             PeerTarget.ARTIFACTS,
-            List.of(ARTIFACTS_PLAN),
+            // Every pin read as well as the plan, because this is the step that DELETES and its body
+            // is its own pinsBody rather than the plan's. The plan edge already carries all four
+            // transitively; naming them here is the doctrine rather than the mechanism — a step that
+            // deletes on the strength of a pin carries that pin's edge, so a source added to the
+            // body is a source that cannot be added without this list noticing.
+            List.of(ARTIFACTS_PLAN, PINS_DEPLOYMENTS, PINS_CI, PINS_DEPENDENCIES, PINS_IMAGES),
             context ->
                 context.dryRun()
                     ? StepResult.skipped("dry run")
@@ -230,6 +293,19 @@ public class GcProcess implements TechnicalProcess {
                             branchesBody(context)),
                     answer -> GcSummaries.branchesSweep(answer.json()))),
         new StepDefinition(
+            ARTIFACTS_USAGE_AFTER,
+            "Registry store after",
+            PeerTarget.ARTIFACTS,
+            // The registry sweep alone. The docker measurement below waits on everything that frees
+            // host disk; the registry's own bytes are freed by exactly one step, so a container
+            // prune that failed must not cost the run the one figure that would have shown the
+            // registry shrinking.
+            List.of(ARTIFACTS_SWEEP),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.ARTIFACTS, STORE_PATH),
+                    answer -> GcSummaries.storeUsage(answer.json()))),
+        new StepDefinition(
             USAGE_AFTER,
             "Disk usage after",
             PeerTarget.CONTAINERS,
@@ -244,24 +320,28 @@ public class GcProcess implements TechnicalProcess {
    * The pin set, as qits-artifacts takes it:
    *
    * <pre>
-   * {"pins": {"deployments": &lt;the deployments answer, verbatim&gt;,
-   *           "ciDaemon":    &lt;the ci answer, verbatim&gt;}}
+   * {"pins": {"deployments":     &lt;the deployments answer, verbatim&gt;,
+   *           "ciDaemon":        &lt;the ci answer, verbatim&gt;,
+   *           "dependencies":    &lt;the maintenance answer, verbatim&gt;,
+   *           "configuredImages":&lt;the configuration answer, verbatim&gt;}}
    * </pre>
    *
    * <p><b>Verbatim means the bytes the peer sent.</b> Each member is the other service's whole
-   * response document, re-embedded rather than re-shaped: the two contracts belong to
-   * qits-platform-deployments and qits-ci, and a projection here would be a third copy of them to
-   * keep in step.
+   * response document, re-embedded rather than re-shaped: the four contracts belong to
+   * qits-platform-deployments, qits-ci, qits-platform-maintenance and qits-configuration, and a
+   * projection here would be a fifth copy of them to keep in step.
    *
    * <p><b>A member this run could not read is ABSENT, not null.</b> qits-artifacts reads a missing
    * member as that pin source being unanswered, which makes the plan not executable and aborts a
    * sweep — the fail-closed rule, unchanged. In practice the edges mean this step never runs
-   * without both, so the absent case is the belt.
+   * without all four, so the absent case is the belt.
    */
   private static String pinsBody(RunContext context) {
     ObjectNode pins = JSON.createObjectNode();
     context.answer(PINS_DEPLOYMENTS).ifPresent(node -> pins.set("deployments", node));
     context.answer(PINS_CI).ifPresent(node -> pins.set("ciDaemon", node));
+    context.answer(PINS_DEPENDENCIES).ifPresent(node -> pins.set("dependencies", node));
+    context.answer(PINS_IMAGES).ifPresent(node -> pins.set("configuredImages", node));
     ObjectNode body = JSON.createObjectNode();
     body.set("pins", pins);
     return body.toString();
