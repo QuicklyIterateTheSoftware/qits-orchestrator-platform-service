@@ -64,12 +64,18 @@ public class PeerClient {
   @ConfigProperty(name = "qits.orchestrator.targets.workspaces-url")
   String workspacesUrl;
 
+  @ConfigProperty(name = "qits.orchestrator.targets.maintenance-url")
+  String maintenanceUrl;
+
+  @ConfigProperty(name = "qits.orchestrator.targets.configuration-url")
+  String configurationUrl;
+
   @ConfigProperty(name = "qits.orchestrator.gc.call-timeout")
   Duration callTimeout;
 
   @Inject PeerTokens tokens;
 
-  /** One client for the life of the process — a run is nine calls and a new pool per call is waste. */
+  /** One client for the life of the process — a run is many calls and a new pool per call is waste. */
   private volatile HttpClient client;
 
   /** The absolute url a step's path resolves to on one peer. */
@@ -137,6 +143,8 @@ public class PeerClient {
       case PeerTarget.DEPLOYMENTS -> deploymentsUrl;
       case PeerTarget.PROJECTS -> projectsUrl;
       case PeerTarget.WORKSPACES -> workspacesUrl;
+      case PeerTarget.MAINTENANCE -> maintenanceUrl;
+      case PeerTarget.CONFIGURATION -> configurationUrl;
       default -> throw new IllegalArgumentException("no such peer: " + target);
     };
   }

@@ -1,7 +1,7 @@
 package eu.wohlben.qits.orchestrator.peer;
 
 /**
- * The six peers, by their wire name.
+ * The eight peers, by their wire name.
  *
  * <p>Constants rather than an enum because the same string is three things at once: the value a
  * step reports as its {@code target}, the middle of the config key {@code
@@ -27,6 +27,12 @@ public final class PeerTarget {
 
   /** qits-workspaces — branch semantics and the merged-branch sweep. */
   public static final String WORKSPACES = "workspaces";
+
+  /** qits-platform-maintenance — the dependency pins every repository's main still references. */
+  public static final String MAINTENANCE = "maintenance";
+
+  /** qits-configuration — the container images a workspace, editor or agent launch would pull. */
+  public static final String CONFIGURATION = "configuration";
 
   private PeerTarget() {}
 }

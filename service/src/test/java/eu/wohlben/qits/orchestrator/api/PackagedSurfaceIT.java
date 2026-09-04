@@ -91,21 +91,28 @@ public class PackagedSurfaceIT {
     @Override
     public Map<String, String> getConfigOverrides() {
       String dead = "http://127.0.0.1:" + deadPort();
-      return Map.of(
-          "QITS_RESOURCE_DB_URL", databaseUrl(URL_PROPERTY, DATABASE),
-          "QITS_RESOURCE_DB_USERNAME", EmbeddedPg.USER,
-          "QITS_RESOURCE_DB_PASSWORD", EmbeddedPg.PASSWORD,
-          "qits.orchestrator.targets.artifacts-url", dead,
-          "qits.orchestrator.targets.containers-url", dead,
-          "qits.orchestrator.targets.ci-url", dead,
-          "qits.orchestrator.targets.deployments-url", dead,
-          // projects and workspaces are the merged-branch sweep's two peers (2026-08-25). They
-          // belong on the dead port with the other four, or "every peer fails" is only true by
-          // accident of the shipped defaults not resolving in the step container.
-          "qits.orchestrator.targets.projects-url", dead,
-          "qits.orchestrator.targets.workspaces-url", dead,
-          // The clock must not start a run beside the one this IT starts itself.
-          "quarkus.scheduler.enabled", "false");
+      // A mutable map rather than Map.of: EVERY peer belongs on the dead port, and there are more
+      // of them than that factory takes pairs. A peer missing from this list would be left on its
+      // shipped alias, so "every peer fails" would be true only by accident of that name not
+      // resolving in the step container.
+      Map<String, String> overrides = new java.util.LinkedHashMap<>();
+      overrides.put("QITS_RESOURCE_DB_URL", databaseUrl(URL_PROPERTY, DATABASE));
+      overrides.put("QITS_RESOURCE_DB_USERNAME", EmbeddedPg.USER);
+      overrides.put("QITS_RESOURCE_DB_PASSWORD", EmbeddedPg.PASSWORD);
+      overrides.put("qits.orchestrator.targets.artifacts-url", dead);
+      overrides.put("qits.orchestrator.targets.containers-url", dead);
+      overrides.put("qits.orchestrator.targets.ci-url", dead);
+      overrides.put("qits.orchestrator.targets.deployments-url", dead);
+      // projects and workspaces are the merged-branch sweep's two peers (2026-08-25).
+      overrides.put("qits.orchestrator.targets.projects-url", dead);
+      overrides.put("qits.orchestrator.targets.workspaces-url", dead);
+      // maintenance and configuration are the two pin sources the registry keeps against
+      // (2026-09-04): what repositories' mains reference, and what a launch would pull.
+      overrides.put("qits.orchestrator.targets.maintenance-url", dead);
+      overrides.put("qits.orchestrator.targets.configuration-url", dead);
+      // The clock must not start a run beside the one this IT starts itself.
+      overrides.put("quarkus.scheduler.enabled", "false");
+      return overrides;
     }
 
     /**
@@ -171,21 +178,22 @@ public class PackagedSurfaceIT {
         .get("/orchestrator/api/runs/" + id)
         .then()
         .statusCode(200)
-        // The whole gc plan, one row per StepDefinition in GcProcess.steps() — eleven since the
-        // merged-branch sweep added its two peers (2026-08-25), the same count ProcessApiTest and
-        // the userflow IT pin. Step 0 is the first peer read and fails against a dead port; step 3
-        // (the registry plan) depends on the two pin reads and is skipped fail-closed when they do.
-        .body("steps.size()", Matchers.equalTo(11))
+        // The whole gc plan, one row per StepDefinition in GcProcess.steps() — fifteen since the two
+        // pin sources and the registry store measurement were added (2026-09-04), the same count
+        // ProcessApiTest and the userflow IT pin. Step 0 is the first peer read and fails against a
+        // dead port; step 6 (the registry plan) depends on all four pin reads and is skipped
+        // fail-closed when they do.
+        .body("steps.size()", Matchers.equalTo(15))
         .body("steps[0].status", Matchers.equalTo("FAILED"))
         .body("steps[0].error", Matchers.containsString("could not be called"))
-        .body("steps[3].status", Matchers.equalTo("SKIPPED"))
-        .body("steps[3].error", Matchers.containsString("skipped:"));
+        .body("steps[6].status", Matchers.equalTo("SKIPPED"))
+        .body("steps[6].error", Matchers.containsString("skipped:"));
 
     // The round trip above would look identical against any database at all, so read the rows back
     // out of the postgres this JVM handed the process through ${QITS_RESOURCE_DB_URL}. That is the
     // whole claim: the shipped expression resolved, and Flyway's migration survived as a classpath
     // resource — exactly the shape a native image drops.
-    assertTrue(stepRows(id) == 11, "the packaged process must have written its steps");
+    assertTrue(stepRows(id) == 15, "the packaged process must have written its steps");
   }
 
   @Test

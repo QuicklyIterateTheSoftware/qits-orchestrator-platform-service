@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * <b>The six services a gc run drives, and the seventh it borrows a credential from</b> — one
+ * <b>The eight services a gc run drives, and the ninth it borrows a credential from</b> — one
  * in-JVM stub impersonating all of them, plus the <b>outgoing</b> tap that draws what the launched
  * process asked each one.
  *
@@ -27,13 +27,16 @@ import java.util.Optional;
  *
  * <p>A technical process only SENDS REQUESTS. Everything it does happens on the far side of a
  * socket from this JVM, so a story that wanted to show what a run actually did has exactly one
- * source of evidence: the record each far side keeps of being asked. There are six of them, and
+ * source of evidence: the record each far side keeps of being asked. There are eight of them, and
  * every one is a decision written down in {@code qits-orchestrator-plan.md}:
  *
  * <pre>
  * usage.before / usage.after   qits-containers               GET  /containers/api/gc/usage
+ * artifacts.usage.before/after qits-artifacts                GET  /artifacts/api/store/summary
  * pins.deployments             qits-platform-deployments     GET  /platform-deployments/api/pins
  * pins.ci                      qits-ci                       GET  /ci/api/daemon
+ * pins.dependencies            qits-platform-maintenance     GET  /maintenance/api/pins
+ * pins.images                  qits-configuration            GET  /configuration/api/pins
  * artifacts.plan               qits-artifacts                POST /artifacts/api/gc/plan
  * artifacts.sweep              qits-artifacts                POST /artifacts/api/gc/sweep
  * containers.images            qits-containers               POST /containers/api/gc/images
@@ -43,13 +46,13 @@ import java.util.Optional;
  * branches.sweep               qits-workspaces               POST /workspaces/api/gc/branches
  * </pre>
  *
- * <p><b>One process impersonates all of them, and the diagram is drawn from the PATH.</b> The six
- * are six urls in this service's configuration and would be six hosts on a platform; here they are
- * six contexts on one stub, and {@link #peer} maps a path prefix onto the name a reader knows the
- * peer by. Nothing about the evidence changes — direction, method, path and status are what an edge
- * is — and six servers would only be five more ports to park.
+ * <p><b>One process impersonates all of them, and the diagram is drawn from the PATH.</b> The eight
+ * are eight urls in this service's configuration and would be eight hosts on a platform; here they
+ * are eight contexts on one stub, and {@link #peer} maps a path prefix onto the name a reader knows
+ * the peer by. Nothing about the evidence changes — direction, method, path and status are what an
+ * edge is — and eight servers would only be seven more ports to park.
  *
- * <p><b>The seventh is qits-platform-idp</b>, {@code POST /idp/token}: the outbound half of this
+ * <p><b>The ninth is qits-platform-idp</b>, {@code POST /idp/token}: the outbound half of this
  * service's identity, which the six named oidc clients present to their peers. It draws as the same
  * node {@link MockIdp} does, because it is the same component — the mock serves the inbound half
  * (the JWKS this service validates callers against) and this stub serves the outbound half.
@@ -63,7 +66,7 @@ import java.util.Optional;
  * <p>The exception is {@link #refuse}, and it exists because <b>no story-controlled value reaches a
  * peer path here</b>. In a repository whose peers are addressed per subject ({@code
  * …/applications/story-misconfigured/resolved}) a refusal can be keyed on the name in the url, and
- * being unreadable is then what that name MEANS. A gc run's ten paths are fixed by {@code
+ * being unreadable is then what that name MEANS. A gc run's thirteen paths are fixed by {@code
  * GcProcess.steps()} and identical in every run, so "this peer is down tonight" cannot be spelled
  * as a path. It is spelled as a file instead — written by the one story about a broken peer, in a
  * {@code try}/{@code finally} that always clears it, wiped again when the stub starts, and read
@@ -88,7 +91,7 @@ import java.util.Optional;
  * <p>quarkus-oidc-client caches the token it acquires and re-mints only when it expires, so the
  * {@code POST /idp/token} arrow belongs to the <b>first run of the whole catalogue</b> and to no
  * other. That is a real property of this service rather than an artefact here: {@code PeerTokens}
- * holds a {@code TokensHelper} per peer precisely so that a nine-step run is not nine token
+ * holds a {@code TokensHelper} per peer precisely so that a fifteen-step run is not fifteen token
  * requests.
  *
  * <p>What this stand-in chooses is only that the horizon is the whole run: the token says {@code
@@ -98,7 +101,7 @@ import java.util.Optional;
  * appears in whichever diagram happened to be more than a second after the last. An edge that comes
  * and goes with the clock is a {@code networkHash} that never settles.
  *
- * <p>Six clients mint six tokens on that first run and they draw as ONE arrow: an edge is
+ * <p>Eight clients mint eight tokens on that first run and they draw as ONE arrow: an edge is
  * {@code (kind, from, to, label)} and the six are identical in all four. The corollary to know when
  * running one class alone: {@code stories.collection.GarbageCollectionRunIT} claims that arrow, and
  * any other story class run on its own inherits it and fails its own edge count — loudly, which is
@@ -126,16 +129,25 @@ public final class StoryPeers {
   /** Branch semantics, and the merged-branch sweep that owns them. */
   public static final String WORKSPACES = "qits-workspaces";
 
+  /** The dependency pins: what every repository's main still references in its manifests. */
+  public static final String MAINTENANCE = "qits-platform-maintenance";
+
+  /** The configured container images a workspace, editor or agent launch would pull. */
+  public static final String CONFIGURATION = "qits-configuration";
+
   /** The identity provider — here as the outbound token endpoint. Same node {@link MockIdp} is. */
   public static final String IDP = MockIdp.SERVICE_NAME;
 
   /** Every peer, for the negative claims a refusal story makes about all of them at once. */
   public static final List<String> ALL =
-      List.of(CONTAINERS, ARTIFACTS, CI, DEPLOYMENTS, PROJECTS, WORKSPACES);
+      List.of(CONTAINERS, ARTIFACTS, CI, DEPLOYMENTS, PROJECTS, WORKSPACES, MAINTENANCE, CONFIGURATION);
 
   // --- the paths, exactly as GcProcess spells them --------------------------------------------
 
   public static final String USAGE_PATH = "/containers/api/gc/usage";
+  public static final String STORE_PATH = "/artifacts/api/store/summary";
+  public static final String DEPENDENCY_PINS_PATH = "/maintenance/api/pins";
+  public static final String IMAGE_PINS_PATH = "/configuration/api/pins";
   public static final String IMAGES_PATH = "/containers/api/gc/images";
   public static final String VOLUMES_PATH = "/containers/api/gc/volumes";
   public static final String BUILD_CACHE_PATH = "/containers/api/gc/build-cache";
@@ -163,6 +175,16 @@ public final class StoryPeers {
 
   /** The ci daemon's pinned version, which travels verbatim into the artifacts plan request. */
   public static final String CI_DAEMON_VERSION = "2026.815.120000";
+
+  /**
+   * The library version a repository's main pins in its pom — consumption rather than deployment,
+   * which is the whole reason the maintenance answer is a pin source of its own: nothing deploys a
+   * dependency, so no other peer here can say this version is still referenced.
+   */
+  public static final String MANIFEST_PIN_VERSION = "2026.903.85122";
+
+  /** The workspace image version a launch would pull, from qits-configuration's own entries. */
+  public static final String CONFIGURED_IMAGE_VERSION = "2026.904.160522";
 
   /** The repository the branch sweep iterates over — one row of the projects catalogue. */
   public static final String CATALOGUE_REPOSITORY = "qits-platform-orchestrator";
@@ -281,6 +303,27 @@ public final class StoryPeers {
       case USAGE_PATH ->
           "{\"images\":{\"sizeBytes\":43500000000,\"reclaimableBytes\":19300000000},"
               + "\"buildCache\":{\"sizeBytes\":35100000000}}";
+      // The registry plane, which the docker read above cannot see: these bytes are rows in
+      // qits-artifacts' own store, and a run measured by `docker system df` alone reported a
+      // platform that was not growing while 50 GB of registry did.
+      case STORE_PATH ->
+          "{\"diskTotalBytes\":51200000000,\"ociUnionBytes\":50700000000,"
+              + "\"docsBytes\":164200000,\"sbomBytes\":112600000}";
+      case DEPENDENCY_PINS_PATH ->
+          "{\"repositories\":[{\"name\":\""
+              + CATALOGUE_REPOSITORY
+              + "\",\"status\":\"OK\"}],"
+              + "\"pins\":[{\"ecosystem\":\"maven\",\"name\":\"eu.wohlben.qits:qits-blobstore\","
+              + "\"version\":\""
+              + MANIFEST_PIN_VERSION
+              + "\",\"repository\":\""
+              + CATALOGUE_REPOSITORY
+              + "\",\"manifestPath\":\"pom.xml\"}]}";
+      case IMAGE_PINS_PATH ->
+          "{\"pins\":[{\"image\":\"qits/workspace\",\"version\":\""
+              + CONFIGURED_IMAGE_VERSION
+              + "\",\"application\":\"qits-workspaces\","
+              + "\"key\":\"env.QITS_WORKSPACE_IMAGE_VERSION\"}]}";
       case PINS_PATH ->
           "{\"pins\":[{\"applicationName\":\""
               + PINNED_APPLICATION
@@ -475,6 +518,12 @@ public final class StoryPeers {
     }
     if (path.startsWith("/workspaces/")) {
       return WORKSPACES;
+    }
+    if (path.startsWith("/maintenance/")) {
+      return MAINTENANCE;
+    }
+    if (path.startsWith("/configuration/")) {
+      return CONFIGURATION;
     }
     if (path.startsWith("/idp/")) {
       return IDP;

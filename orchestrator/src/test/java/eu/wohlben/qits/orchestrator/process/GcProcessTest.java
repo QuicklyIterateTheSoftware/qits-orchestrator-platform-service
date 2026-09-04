@@ -26,8 +26,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The gc process against faked peers: the eleven steps, the bodies they send, the summaries they read
- * back, and what a broken pin read does.
+ * The gc process against faked peers: the fifteen steps, the bodies they send, the summaries they
+ * read back, and what a broken pin read does.
  *
  * <p>The peers are {@link FakePeers}, an {@code @Alternative} over {@code PeerClient}'s two call
  * methods — so the urls asserted here are the real ones, resolved from the shipped target
@@ -39,8 +39,11 @@ class GcProcessTest {
   private static final ObjectMapper JSON = new ObjectMapper();
 
   private static final String USAGE = "/containers/api/gc/usage";
+  private static final String STORE = "/artifacts/api/store/summary";
   private static final String DEPLOYMENT_PINS = "/platform-deployments/api/pins";
   private static final String CI_PIN = "/ci/api/daemon";
+  private static final String DEPENDENCY_PINS = "/maintenance/api/pins";
+  private static final String IMAGE_PINS = "/configuration/api/pins";
   private static final String PLAN = "/artifacts/api/gc/plan";
   private static final String SWEEP = "/artifacts/api/gc/sweep";
   private static final String IMAGES = "/containers/api/gc/images";
@@ -66,6 +69,38 @@ class GcProcessTest {
              "containers":{"count":19,"active":19,"sizeBytes":120000,"reclaimableBytes":0},
              "volumes":{"count":31,"active":22,"sizeBytes":8100000000,"reclaimableBytes":900000000},
              "buildCache":{"count":812,"active":0,"sizeBytes":35100000000,"reclaimableBytes":35100000000}}
+            """));
+    peers.answer(
+        STORE,
+        FakePeers.Scripted.ok(
+            """
+            {"diskTotalBytes":51200000000,"ociUnionBytes":50700000000,
+             "docsBytes":164200000,"sbomBytes":112600000}
+            """));
+    peers.answer(
+        DEPENDENCY_PINS,
+        FakePeers.Scripted.ok(
+            """
+            {"generatedAt":"2026-09-04T20:00:00Z",
+             "repositories":[{"name":"qits-githost-service","status":"OK"},
+                             {"name":"qits-workspace-daemon","status":"OK"}],
+             "pins":[{"ecosystem":"maven","name":"eu.wohlben.qits:qits-blobstore",
+                      "version":"2026.903.85122","repository":"qits-githost-service",
+                      "manifestPath":"pom.xml"},
+                     {"ecosystem":"npm","name":"@qits/ui-components","version":"2026.902.204627",
+                      "repository":"qits-githost-service","manifestPath":"package.json"},
+                     {"ecosystem":"docker","name":"qits/workspace-base","version":"2026.902.143920",
+                      "repository":"qits-workspace-daemon","manifestPath":"docker/Dockerfile"}]}
+            """));
+    peers.answer(
+        IMAGE_PINS,
+        FakePeers.Scripted.ok(
+            """
+            {"generatedAt":"2026-09-04T20:00:00Z",
+             "pins":[{"image":"qits/project-agent","version":"2026.904.160152",
+                      "application":"qits-projects","key":"env.QITS_PROJECTS_AGENT_IMAGE_VERSION"},
+                     {"image":"qits/workspace","version":"2026.904.160522",
+                      "application":"qits-workspaces","key":"env.QITS_WORKSPACE_IMAGE_VERSION"}]}
             """));
     peers.answer(
         DEPLOYMENT_PINS,
@@ -194,7 +229,7 @@ class GcProcessTest {
   }
 
   @Test
-  void aHealthyPlatformRunsAllElevenStepsAndSummarisesEachFromTheAnswer() {
+  void aHealthyPlatformRunsAllFifteenStepsAndSummarisesEachFromTheAnswer() {
     UUID id = executor.start("gc", RunTrigger.MANUAL, false);
     OpRun run = awaitClosed(id);
 
@@ -204,8 +239,11 @@ class GcProcessTest {
     assertEquals(
         List.of(
             "usage.before",
+            "artifacts.usage.before",
             "pins.deployments",
             "pins.ci",
+            "pins.dependencies",
+            "pins.images",
             "artifacts.plan",
             "artifacts.sweep",
             "containers.images",
@@ -213,6 +251,7 @@ class GcProcessTest {
             "containers.build-cache",
             "repos.catalogue",
             "branches.sweep",
+            "artifacts.usage.after",
             "usage.after"),
         runs.steps(id).stream().map(step -> step.stepId).toList());
     steps.values().forEach(step -> assertEquals(RunStatus.SUCCEEDED.name(), step.status, step.stepId));
@@ -221,9 +260,20 @@ class GcProcessTest {
     assertEquals(
         "images 43.5 GB (19.3 GB reclaimable), build cache 35.1 GB",
         steps.get("usage.before").summary);
+    // THE SECOND PLANE. The registry's bytes live in qits-artifacts' own store and the docker read
+    // above cannot see one of them — a run measured by `docker system df` alone reported a platform
+    // that was not growing while 50 GB of registry did.
+    assertEquals(
+        "store 51.2 GB (oci 50.7 GB, docs 164.2 MB, sboms 112.6 MB)",
+        steps.get("artifacts.usage.before").summary);
+    assertEquals(
+        "store 51.2 GB (oci 50.7 GB, docs 164.2 MB, sboms 112.6 MB)",
+        steps.get("artifacts.usage.after").summary);
     assertEquals("2 applications pinned", steps.get("pins.deployments").summary);
     assertEquals(
         "qits-ci-daemon 2026.815.120000 (previous 2026.814.101010)", steps.get("pins.ci").summary);
+    assertEquals("3 manifest pins across 2 repositories", steps.get("pins.dependencies").summary);
+    assertEquals("2 configured container images", steps.get("pins.images").summary);
     assertEquals("128 identities, 19.3 GB reclaimable, executable=true", steps.get("artifacts.plan").summary);
     assertEquals("91 blobs unlinked, 17.8 GB reclaimed", steps.get("artifacts.sweep").summary);
     assertEquals("1 images removed, 9.4 GB reclaimed, 2 kept", steps.get("containers.images").summary);
@@ -240,13 +290,24 @@ class GcProcessTest {
         "http://qits-platform-deployments:8080/platform-deployments/api/pins",
         steps.get("pins.deployments").requestUrl);
     assertEquals("GET", steps.get("pins.deployments").requestMethod);
+    // The two new peers, each addressed at its own shipped target — a step pointed at the wrong one
+    // would still answer here, because one FakePeers script serves all eight, and only the url says
+    // which service was actually asked.
+    assertEquals(
+        "http://qits-platform-maintenance:8080/maintenance/api/pins",
+        steps.get("pins.dependencies").requestUrl);
+    assertEquals(
+        "http://qits-configuration:8080/configuration/api/pins", steps.get("pins.images").requestUrl);
+    assertEquals(
+        "http://qits-artifacts:8080/artifacts/api/store/summary",
+        steps.get("artifacts.usage.before").requestUrl);
     assertEquals(200, steps.get("usage.after").httpStatus);
     // The answer is stored whole, which is what an investigation reads.
     assertTrue(steps.get("containers.images").responseBody.contains("bytesReclaimed"));
   }
 
   @Test
-  void thePinsGoToArtifactsVerbatimUnderTheTwoNamesItReads() {
+  void thePinsGoToArtifactsVerbatimUnderTheFourNamesItReads() {
     UUID id = executor.start("gc", RunTrigger.MANUAL, false);
     awaitClosed(id);
 
@@ -255,8 +316,39 @@ class GcProcessTest {
     assertEquals(
         "qits-ci", pins.get("deployments").get("pins").get(0).get("applicationName").asText());
     assertEquals("2026.815.120000", pins.get("ciDaemon").get("daemonVersion").asText());
+    // The two consumption sources, and they are the ones no deployment and no release date can
+    // stand in for: what a repository's main still references, and what a launch would pull.
+    assertEquals(
+        "eu.wohlben.qits:qits-blobstore",
+        pins.get("dependencies").get("pins").get(0).get("name").asText());
+    assertEquals(
+        "qits-workspace-daemon",
+        pins.get("dependencies").get("repositories").get(1).get("name").asText());
+    assertEquals(
+        "qits/project-agent", pins.get("configuredImages").get("pins").get(0).get("image").asText());
     // The sweep is handed the same document, not a re-read of the peers.
     assertEquals(planBody, json(peers.bodiesFor(SWEEP).getFirst()));
+  }
+
+  @Test
+  void aPinSourceThatAnsweredSomethingUnreadableIsAbsentFromTheBodyRatherThanNull() {
+    // 200 with a body that is not JSON: the step SUCCEEDS — a peer that answered is not a failure —
+    // but there is no tree to embed, so the member is absent rather than null. It is the belt behind
+    // the edges (a 1 MiB truncation does the same thing), and qits-artifacts reads an absent member
+    // as that source being unanswered, which aborts the sweep on its side.
+    peers.answer(IMAGE_PINS, FakePeers.Scripted.status(200, "{\"pins\":[…truncated"));
+
+    UUID id = executor.start("gc", RunTrigger.MANUAL, false);
+    awaitClosed(id);
+
+    Map<String, OpStep> steps = stepsOf(id);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("pins.images").status);
+
+    JsonNode pins = json(peers.bodiesFor(PLAN).getFirst()).get("pins");
+    assertTrue(pins.has("deployments"));
+    assertTrue(pins.has("ciDaemon"));
+    assertTrue(pins.has("dependencies"));
+    assertFalse(pins.has("configuredImages"), "an unreadable source must not be sent as anything");
   }
 
   @Test
@@ -318,6 +410,8 @@ class GcProcessTest {
     assertEquals(RunStatus.SUCCEEDED.name(), steps.get("usage.after").status);
     assertEquals(200, steps.get("usage.after").httpStatus);
     assertNull(steps.get("usage.after").error);
+    // …and so does the registry's closing measurement, which hangs off the withheld step alone.
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("artifacts.usage.after").status);
   }
 
   @Test
@@ -355,6 +449,36 @@ class GcProcessTest {
     // two of the four steps it depends on were skipped BY A FAILURE, so an "after" figure would be
     // measuring a run that could not happen rather than one that chose not to.
     assertEquals(RunStatus.SKIPPED.name(), steps.get("usage.after").status);
+    // The registry's own opening measurement needs no pin either, so the run still records what the
+    // store held — which is the figure the whole second plane exists for.
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("artifacts.usage.before").status);
+    assertEquals(RunStatus.SKIPPED.name(), steps.get("artifacts.usage.after").status);
+  }
+
+  @Test
+  void aDependencyPinNobodyCouldReadStopsTheRegistryAndLeavesTheHostSweepAlone() {
+    // The new pin sources are the registry's, not the host's: qits-platform-maintenance says what
+    // repositories' mains still reference, which is a keep-set for maven, npm and oci identities in
+    // qits-artifacts. A host image is kept by a DEPLOYMENT pin, which answered — so the image sweep
+    // must still run, exactly as the build-cache prune does.
+    peers.answer(
+        DEPENDENCY_PINS, FakePeers.Scripted.unreachable("qits-platform-maintenance: no route"));
+
+    UUID id = executor.start("gc", RunTrigger.MANUAL, false);
+    OpRun run = awaitClosed(id);
+
+    assertEquals(RunStatus.FAILED.name(), run.status);
+    Map<String, OpStep> steps = stepsOf(id);
+    assertEquals(RunStatus.FAILED.name(), steps.get("pins.dependencies").status);
+    assertEquals(RunStatus.SKIPPED.name(), steps.get("artifacts.plan").status);
+    assertEquals("skipped: pins.dependencies failed", steps.get("artifacts.plan").error);
+    assertEquals(RunStatus.SKIPPED.name(), steps.get("artifacts.sweep").status);
+    assertEquals("skipped: pins.dependencies failed", steps.get("artifacts.sweep").error);
+    assertTrue(peers.bodiesFor(PLAN).isEmpty(), "no plan may be asked for without every pin source");
+
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("pins.images").status);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.images").status);
+    assertEquals(RunStatus.SUCCEEDED.name(), steps.get("containers.build-cache").status);
   }
 
   @Test

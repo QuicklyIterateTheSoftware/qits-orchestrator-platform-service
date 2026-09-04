@@ -122,14 +122,14 @@ public class RunHistoryIT {
         .body("kind", hasItem(StoryTarget.GC))
         .body(gc() + ".name", equalTo("Garbage collection"))
         .body(gc() + ".description", notNullValue())
-        .body(gc() + ".steps.size()", equalTo(11))
+        .body(gc() + ".steps.size()", equalTo(15))
         .body(gc() + ".steps.id[0]", equalTo("usage.before"))
         .body(gc() + ".steps.id", hasItem("branches.sweep"))
         .body(gc() + ".steps.target", hasItem("workspaces"));
     story
         .note(
-            "the catalogue: one process, eleven steps, each naming the peer it calls — the graph the"
-                + " client draws before a run exists")
+            "the catalogue: one process, fifteen steps, each naming the peer it calls — the graph"
+                + " the client draws before a run exists")
         .as("plan-served");
 
     StoryIdentities.person(given(), StoryIdentities.OPERATOR_ACCOUNT)
@@ -138,15 +138,17 @@ public class RunHistoryIT {
         .then()
         .statusCode(200)
         // The fail-closed edge, and it is asserted BECAUSE it is a promise made on the wire.
-        .body(step("artifacts.plan") + ".dependsOn", contains("pins.deployments", "pins.ci"))
+        .body(
+            step("artifacts.plan") + ".dependsOn",
+            contains("pins.deployments", "pins.ci", "pins.dependencies", "pins.images"))
         // …and the one that deliberately is NOT there: a prune has no keep-set, so hanging it off
         // the image sweep would cost the platform its largest reclaim on a broken pin read.
         .body(step("containers.build-cache") + ".dependsOn", contains("usage.before"))
         .body(step("usage.after") + ".dependsOn", hasItem("artifacts.sweep"));
     story
         .note(
-            "the edges are the reading: the registry plan waits on both pin reads, while the build"
-                + " cache prune waits on the disk measurement alone — a step with no keep-set must"
+            "the edges are the reading: the registry plan waits on all four pin reads, while the"
+                + " build cache prune waits on the disk measurement alone — a step with no keep-set must"
                 + " not be stopped by a pin it never needed")
         .as("edges-are-the-contract");
   }
@@ -209,7 +211,7 @@ public class RunHistoryIT {
         .body("kind", equalTo(StoryTarget.GC))
         .body("trigger", equalTo("manual"))
         .body("finishedAt", notNullValue())
-        .body("steps.size()", equalTo(11))
+        .body("steps.size()", equalTo(15))
         .body(StoryRuns.stepPath("usage.before") + ".target", equalTo("containers"))
         .body(StoryRuns.stepPath("usage.before") + ".request.method", equalTo("GET"))
         .body(
