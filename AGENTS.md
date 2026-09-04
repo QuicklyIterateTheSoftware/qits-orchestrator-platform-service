@@ -210,9 +210,9 @@ a JWKS, and a clone-alone build needs no issuer. There is no third state.
 `service/src/test/java/.../stories/` is this repository's **user-story catalogue**: ten stories in
 five categories, written with the `qits-userflows` framework, emitting
 `service/target/userstories/` — steps, a description a person can read, and a **network diagram that
-is observed rather than narrated**. `.config/qits/ci-event-userflows.yml` runs them on every push and
-publishes the bundle as docs. They are proofs first and documentation second; nothing in them is
-drawn by hand.
+is observed rather than narrated**. The userflow half of `.config/qits/ci-event-release-request.yml`
+runs them on every release-request fold and publishes the bundle as docs. They are proofs first and
+documentation second; nothing in them is drawn by hand.
 
 | class | category | what it says |
 |---|---|---|
@@ -287,8 +287,9 @@ pom, because Quinoa is in no BOM and its version does not track the platform's.
   give it a segment of its own, because an entry protects a segment and not a string prefix.
 - **The bundle is built OUTSIDE the docker build.** `@qits/ui-components` exists only on the
   platform's own npm registry, which a `RUN` reaches by no address at all. So
-  `.config/qits/ci-post-receive.yml` builds it in the step container (on qits-net) and the
-  Dockerfile neuters Quinoa's install/ci/build commands with `--version`, guards the staged bundle
+  both `.config/qits/ci-event-release.yml` and the QA pipeline's gating half build it in the step
+  container (on qits-net), and the Dockerfile neuters Quinoa's install/ci/build commands with
+  `--version`, guards the staged bundle
   with a `test -f` before the multi-minute native compile, and `cp`s the bundle onto itself so
   Quinoa's MOVE does not hit overlayfs' EXDEV.
 - **Quinoa is off in test mode and stays off.** Every claim about the SPA belongs in
