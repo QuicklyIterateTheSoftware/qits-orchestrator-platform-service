@@ -8,7 +8,8 @@ import java.util.UUID;
  *
  * @param id the run id, which {@code GET /runs/{id}} takes
  * @param kind the process
- * @param trigger {@code manual} or {@code scheduled}
+ * @param trigger what started it: {@code manual}, {@code scheduled} or {@code event} — a label a
+ *     person reads, never a string anything branches on (see {@code RunTrigger})
  * @param dryRun whether this run was allowed to delete
  * @param status RUNNING, SUCCEEDED or FAILED
  * @param startedAt when it opened

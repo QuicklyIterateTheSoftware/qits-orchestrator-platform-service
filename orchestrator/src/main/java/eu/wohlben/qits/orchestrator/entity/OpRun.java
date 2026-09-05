@@ -29,8 +29,10 @@ public class OpRun extends PanacheEntityBase {
   public String kind;
 
   /**
-   * {@code manual} or {@code scheduled}. The column is named {@code trigger}; PostgreSQL treats the
-   * word as non-reserved, so it needs no quoting.
+   * {@code manual}, {@code scheduled} or {@code event} — {@code RunTrigger}'s wire spelling. The
+   * column is named {@code trigger}; PostgreSQL treats the word as non-reserved, so it needs no
+   * quoting, and it is a varchar rather than an enum type precisely so a new value is a code change
+   * and not a migration.
    */
   @Column(name = "trigger", nullable = false, length = 32)
   public String trigger;

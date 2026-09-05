@@ -64,6 +64,32 @@
             <artifactId>quarkus-scheduler</artifactId>
         </dependency>
         <dependency>
+            <!-- THE PLATFORM EVENT BUS, and this repository's first consumption of it.
+                 bus/DeploymentActiveListener is a durable consumer of qits-deployments'
+                 DeploymentActive: a deployment going live is the moment the images and registry
+                 identities it superseded stop being referenced, and a wave of them is what
+                 schedule/GcDeployTrigger collapses into one gc run. The cron stays as the backstop.
+
+                 IT ADDS A MANDATORY DEPLOYMENT RESOURCE. `.config/qits/deployments.yml` declares
+                 `postgresql:eventstream:qits_platform_orchestrator_eventstream` for it; the jar's
+                 own shipped defaults map QITS_RESOURCE_EVENTSTREAM_* onto
+                 quarkus.datasource.eventstream.*, and an unset variable leaves the expression
+                 unresolvable so the process refuses to boot rather than opening some fallback
+                 store. Being dark in %dev/%test does not change that: qits.eventstream.enabled=false
+                 stops publishing, sweeping and dialling, never the datasource — hence the second
+                 database in testdb/EmbeddedPgConfigSource and the second triple in
+                 PackagedSurfaceIT's profile.
+
+                 THE VOCABULARY JAR IS DELIBERATELY ABSENT. qits-deployments publishes
+                 qits-platform-deployments-events, the platform's Maven registry serves nothing
+                 under that coordinate, and a jar it does not serve is a release pipeline that
+                 cannot build — so the payload is bound into a local record by CanonicalJson, which
+                 is the platform's standing answer for a cross-repo event (qits-projects'
+                 DeploymentActiveListener is the model). -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-eventstream</artifactId>
+        </dependency>
+        <dependency>
             <!-- The orchestrator client. Quinoa runs the npm build in src/main/webui (the
                  qits-platform-spa-orchestrator submodule) during augmentation and serves the result
                  as static resources at /orchestrator/ — see the quarkus.quinoa.* block in

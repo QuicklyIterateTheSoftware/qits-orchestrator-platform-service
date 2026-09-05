@@ -12,7 +12,13 @@ import java.util.UUID;
 import org.jboss.logging.Logger;
 
 /**
- * The clock, and the only trigger the gc run has besides a person pressing the button.
+ * The clock — one of the gc run's two unattended triggers, and the BACKSTOP of the pair.
+ *
+ * <p>{@link GcDeployTrigger} beside it is the other, and it is the one with a reason: a deployment
+ * going live is the moment what it superseded stops being referenced, while a clock is only a guess
+ * about when that has happened. This schedule stays unchanged for what the guess still catches — a
+ * day with no deployment at all, a wave the trigger was down for, and everything that ages out
+ * without anything being deployed.
  *
  * <p><b>Two gates, and they say different things.</b> {@code qits.orchestrator.gc.enabled} is
  * whether the clock may start a run at all; {@code qits.orchestrator.gc.dry-run} is whether the run

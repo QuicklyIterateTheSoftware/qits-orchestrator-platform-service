@@ -104,6 +104,38 @@ identically and deletes nothing, so the dry figures are real figures.
 figures. Only `artifacts.sweep` is skipped outright, because qits-artifacts' sweep has no dry mode,
 and `usage.after` still runs behind it: that skip is policy, not breakage.
 
+### What starts a run
+
+Three things, and none of them adds a step — the run is the same run whatever asked for it. `trigger`
+on the row says which, as `manual`, `scheduled` or `event`.
+
+| trigger | what it is | gates |
+|---|---|---|
+| `manual` | a person pressed Run now, or a machine posted `POST /processes/gc/runs` | none — a person is the decision, and the request carries its own `dryRun` |
+| `scheduled` | the cron, 03:00 UTC (`schedule/GcSchedule`) | `gc.enabled`; deletes unless `gc.dry-run` |
+| `event` | **a deployment went live** (`bus/DeploymentActiveListener` → `schedule/GcDeployTrigger`) | `gc.enabled` and `gc.deploy-trigger.enabled`; **never** dry |
+
+**The cron is a backstop now rather than the policy.** A clock is a guess about when there is
+something to collect; a deployment is the fact — it is the moment the image the predecessor container
+ran, and every registry identity the release it carried superseded, stop being referenced by
+anything. Until those bytes had a trigger of their own they waited for 03:00 the next day for no
+reason but the schedule.
+
+**A deployment wave is one run, not eight.** The trigger is a **trailing-edge debounce**: each
+`DeploymentActive` moves the pending run to `gc.deploy-trigger.quiet-period` (PT10M) from now, so a
+platform release rolling several applications collapses into ONE run that fires after the last of
+them — and that run then drains what the whole wave superseded, registry identities and host images
+together, in a single pass. Firing on the leading edge would plan against a platform still being
+deployed and have the seven behind it refused as already-active.
+
+**A busy executor re-arms rather than loses the wave.** `RunStore.open` refuses a second run of a
+kind inside its own opening transaction; that refusal is the ordinary case for a long run, so it is a
+DEBUG line and the wave is parked for another quiet period.
+
+The bus side is one durable consumer, `orchestrator-gc-on-deploy`, initialized at the **head** of the
+log — replaying from the epoch would arm a collection for every deployment this platform has ever
+made. It is this service's only use of the event bus, and it publishes nothing.
+
 ## API
 
 Under `/orchestrator/api`. Every route takes `qits:admin` (a person, via qits-gateway's
@@ -162,6 +194,8 @@ and overridable by environment without a rebuild.
 | `qits.orchestrator.gc.cron` | `0 0 3 * * ?` | when it does: 03:00 every day |
 | `qits.orchestrator.gc.time-zone` | `UTC` | the zone the cron is read in (the platform's convention) |
 | `qits.orchestrator.gc.dry-run` | `false` | whether the SCHEDULED run may delete |
+| `qits.orchestrator.gc.deploy-trigger.enabled` | `true` | whether a DEPLOYMENT may start a run |
+| `qits.orchestrator.gc.deploy-trigger.quiet-period` | `PT10M` | how long after the LAST deployment of a wave that run fires |
 | `qits.orchestrator.gc.image-keep-prefixes` | `qits/build-images/,qits/graalvmce-musl-builder` | tag prefixes no rule may condemn |
 | `qits.orchestrator.gc.branch-keep-prefixes` | `environment/` | branch prefixes the merged-branch sweep may never condemn (additive to qits-workspaces' own refusals) |
 | `qits.orchestrator.gc.image-min-age` | `PT6H` | the build-then-push grace for an image |
@@ -203,6 +237,12 @@ Off, calls go out with the forward-auth pair alone (`X-Qits-User: qits-platform-
 `resources: postgresql:db` in `.config/qits/deployments.yml` and handed over as
 `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD`. Two tables: `op_run` and `op_step`. It is the
 only account of a deletion that exists on this platform — not a cache.
+
+**A second database comes with the event bus**, `qits_platform_orchestrator_eventstream`, declared on
+the same line as `postgresql:eventstream:…` and handed over as `QITS_RESOURCE_EVENTSTREAM_*`. It is
+the qits-eventstream jar's outbox and claim tables, provisioned by the deployer on the next deploy.
+`qits.eventstream.enabled=false` (`%dev`, `%test`) stops publishing, sweeping and dialling — never
+the datasource, which Quarkus opens and migrates at boot regardless.
 
 ## Building and testing
 

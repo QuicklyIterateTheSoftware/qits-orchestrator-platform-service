@@ -62,6 +62,19 @@
         <qits.db-core.version>2026.904.82648</qits.db-core.version>
         <qits.auth-core.version>2026.904.82648</qits.auth-core.version>
         <qits.arch-rules.version>2026.904.82648</qits.arch-rules.version>
+        <!-- THE PLATFORM EVENT BUS, and this repository's first consumption of it: the outbox, the
+             idempotent PUT, the durable listener and CausationScope, published by
+             components/qits-eventstream into the same platform Maven repository as the three
+             above. `service` takes it for bus/DeploymentActiveListener — qits-deployments says a
+             deployment is live, and a wave of those is what makes the registry's superseded
+             identities collectable before the nightly cron gets to them.
+
+             A RELEASED VERSION, never a range and never a snapshot: a release pipeline's step
+             container resolves this from the platform registry, so a coordinate that repository
+             does not serve is a build that only works on a machine with the right ~/.m2. This is
+             the pin the siblings carry (qits-projects, qits-workspaces, qits-configuration,
+             qits-maintenance all sit on it). -->
+        <qits.eventstream.version>2026.904.82646</qits.eventstream.version>
         <!-- The user-story framework (test scope). This repository's story catalogue is five IT
              classes (api.TokenValidationBootstrapIT plus service/…/stories/**), so a
              `mvn verify -DskipITs=false -Dit.test=<those five>` also regenerates
@@ -190,6 +203,14 @@
                 <version>${qits.arch-rules.version}</version>
             </dependency>
             <dependency>
+                <!-- The event bus. `service/` only: the listener is in the deployable, and the
+                     jar brings a datasource with it that a library module has no business
+                     opening. -->
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-eventstream</artifactId>
+                <version>${qits.eventstream.version}</version>
+            </dependency>
+            <dependency>
                 <!-- The userflow framework. Test scope, in `service/` only: the story runs against
                      the PACKAGED artifact, and that is the one module that produces one. -->
                 <groupId>${project.groupId}</groupId>
@@ -215,8 +236,10 @@
 
     <repositories>
         <repository>
-            <!-- Where the three qits jars above come from. Named `qits-maven` because the image
-                 build's settings file mirrors exactly that id — see .qits-maven-settings.xml. -->
+            <!-- Where the qits jars above come from — qits-db-core, qits-auth-core,
+                 qits-arch-rules, qits-eventstream and the two test-scoped ones. Named `qits-maven`
+                 because the image build's settings file mirrors exactly that id — see
+                 .qits-maven-settings.xml. -->
             <id>qits-maven</id>
             <url>${qits.maven.repository.url}</url>
         </repository>

@@ -34,18 +34,25 @@ routes: /orchestrator
 # `qits-platform-` prefix is `orchestrator`, which is the label this service is served on.
 navigation-entries: system.Orchestrator:3
 
-# THE STORE, DECLARED RATHER THAN CONFIGURED. The line below is what provisions it: a role and a
-# database of its own on the tier's postgres, created before the successor container starts and
-# injected as QITS_RESOURCE_DB_URL / _USERNAME / _PASSWORD — the generic contract the orchestrator
-# jar's datasource defaults read verbatim.
+# THE STORES, DECLARED RATHER THAN CONFIGURED. The line below is what provisions them: a role and a
+# database of its own per entry on the tier's postgres, created before the successor container starts
+# and injected as QITS_RESOURCE_<NAME>_URL / _USERNAME / _PASSWORD — the generic contract the jars'
+# datasource defaults read verbatim.
 #
-# The third segment is omitted, so the database is the default derivation: the application name minus
+# `db` omits the third segment, so its database is the default derivation: the application name minus
 # its `qits-` prefix, dashes to underscores, under a `qits_` prefix — `qits_platform_orchestrator`.
-#
 # WHAT IS IN IT is the only account of a deletion that exists. Nothing else on the platform records
 # which images a night removed and on the strength of which pin set, so this database is not a cache
 # and a fresh one is not equivalent to the old one.
-resources: postgresql:db
+#
+# `eventstream` is the qits-eventstream jar's own outbox and claim tables, and it NAMES its database
+# because the derivation would collide with the run log's. The resource NAME is load-bearing: the jar
+# reads QITS_RESOURCE_EVENTSTREAM_*, and an unset variable leaves its ${…} expressions unresolvable
+# so the process dies at Flyway naming the missing one rather than opening a fallback store. Being
+# dark under %dev/%test (qits.eventstream.enabled=false) stops publishing, sweeping and dialling —
+# never the datasource, which Quarkus opens and migrates at boot regardless. THE DEPLOYER PROVISIONS
+# IT ON THE NEXT DEPLOY; nothing has to be created by hand.
+resources: postgresql:db, postgresql:eventstream:qits_platform_orchestrator_eventstream
 
 # The readiness endpoint the deployer's health gate curls. The convention derives it from the
 # repository name and would land on exactly this path; it is written out because a probe that 404s

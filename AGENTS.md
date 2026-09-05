@@ -35,7 +35,9 @@ the deployment host: 8081 is the platform's own npm registry there.
 **Anything returned as `Response.entity(...)` is invisible to the build-time Jackson analysis**,
 which is what `api/ApiWireReflection` exists for. The 202 from a started run is exactly such a
 response. A new response type joins that list in the commit that adds it; the failure is a 500 in
-the native binary while every JVM test stays green.
+the native binary while every JVM test stays green. `bus/EventWireReflection` is the second member of
+that family, for the same failure one plane over: `CanonicalJson` builds its own `ObjectMapper`, so
+every type the bus binds is invisible to the same analysis.
 
 ## Adding a process
 
@@ -52,7 +54,9 @@ One class and nothing else:
 4. Write the summariser beside it. It reads figures out of the peer's answer and **computes
    nothing** — a summary that re-derived what would die would be a second policy.
 
-Its schedule, if it has one, is a class in `service/schedule` beside `GcSchedule`.
+Its schedule, if it has one, is a class in `service/schedule` beside `GcSchedule` — and so is
+anything else that starts it unattended: `GcDeployTrigger` is a class in the same package, because
+"what starts a run" is one place to read whether the answer is a clock or an event.
 
 ## The executor
 
@@ -130,6 +134,42 @@ disabled and stays disabled — the extension creates it whether or not anything
 plan lists every condemned identity on the platform; the store here is a log a person reads, and an
 unbounded column would let one peer's verbosity decide this service's disk.
 
+## The event bus
+
+`service/…/bus/` is the whole of the bus's **SEAMS**. The machinery is the published
+`qits-eventstream` jar; its rules live in that library's own repository and are not restated here.
+This service **consumes one event and publishes none**.
+
+- **`DeploymentActiveListener` is the gc run's second unattended trigger**, and it is the only reason
+  this repository is on the bus at all. A deployment going live is the moment the images and registry
+  identities it superseded stop being referenced; the cron is a guess about when that has happened.
+  `schedule/GcDeployTrigger` is where every decision behind it sits — the trailing-edge debounce, the
+  two gates, never a dry run, and what a busy executor means — and the listener is decode-and-hand-over.
+- **The payload is a LOCAL record.** qits-deployments publishes `qits-platform-deployments-events`
+  and the platform's Maven registry serves nothing under that coordinate, so a dependency on it is a
+  release pipeline that cannot build. `CanonicalJson.payloadTo` into a record of our own is the
+  platform's standing answer (qits-projects' listener of the same event is the model). The cost is
+  that a rename over there is silent here.
+- **`consumerId()` is `orchestrator-gc-on-deploy` and it is STORAGE.** It keys every `consumed_event`
+  row and the watermark. Change it and you mint a brand-new consumer that initializes at the head of
+  the log. It initializes at the **head** deliberately (`replayFromEpoch()` left false): from the
+  epoch it would arm a collection for every deployment this platform has ever made.
+- **Nothing here throws.** `onFrame` runs inside the transaction that claims the event, so a throw
+  rolls the claim back and the event is owed forever. A payload that will not read is poison — the
+  same bytes on every later offer — so it is a WARN and a return. And the run itself never starts on
+  that thread: arming a timer is memory, and the run opens on the timer's thread, well outside the
+  claim. A gc run inside an event's claim would hold both the transaction and the watermark for
+  minutes of other people's deleting.
+- **The jar brings a MANDATORY deployment resource.** `.config/qits/deployments.yml` declares
+  `postgresql:eventstream:qits_platform_orchestrator_eventstream`, and the resource **name** is
+  load-bearing because the jar reads `QITS_RESOURCE_EVENTSTREAM_*`. `qits.eventstream.enabled=false`
+  (`%dev`, `%test`) stops publishing, sweeping and dialling — never the datasource, which Quarkus
+  opens and migrates at boot regardless. That is why the suite hands out a second database
+  (`testdb/EmbeddedPgConfigSource`) and why `PackagedSurfaceIT`'s profile supplies a second triple
+  and the darkening key: a launched artifact runs in `NORMAL` mode, where `%test` reaches nothing.
+- **`bus/EventWireReflection` is the native-image registration.** Read its javadoc before adding a
+  wire type; the failure it prevents is invisible to every JVM test by construction.
+
 ## Persistence
 
 `RunStore` is the only writer. **Every write is a `DbRetry.inNewTx` ending in a flush**: `inNewTx`
@@ -190,6 +230,21 @@ a JWKS, and a clone-alone build needs no issuer. There is no third state.
 - **The scheduler is off in the suite** (`quarkus.scheduler.enabled=false`). A cron would fire only
   at 03:00, and a suite whose outcome depends on the wall clock fails once a year for nobody's
   reason.
+- **`ManualDeployTriggerTimer` is the same trick for the OTHER unattended trigger**, an
+  `@Alternative` over `DeployTriggerTimer` — the one seam `GcDeployTrigger` schedules through — so
+  "the quiet period lapsed" is a method call. That interface exists for the test and says so: a
+  debounce's whole claim is about WHEN, and shortening the period to milliseconds does not make the
+  assertions deterministic, it makes them depend on thread scheduling. It is enabled suite-wide,
+  which also means no stray event can ever start a run.
+  <br>**Read every fake through a METHOD, never a public field.** These are normal-scoped beans, so a
+  test injects a client proxy and a proxy does not forward field access — an assertion on a public
+  list reads the proxy's own empty one and passes vacuously. Measured here on the first run of this
+  suite.
+- **The bus is dark and has a database anyway.** `qits.eventstream.enabled=false` comes from main's
+  `%test`; the second datasource still opens and migrates, so `testdb/EmbeddedPgConfigSource` names
+  `orchestrator_svc_eventstream` beside the run log's database. `catchup-at-startup=false` is the
+  belt: the startup sweep is not a scheduler tick and `quarkus.scheduler.enabled=false` does not
+  cover it.
 - A `@QuarkusTest` runs under the `test` profile, where qits-auth-core ships a dev user carrying
   `qits:admin` and `qits:system` — so the shipped `@RolesAllowed` pair is exercised rather than
   bypassed, with no `@TestSecurity` fabricating an identity no deployment produces.
@@ -308,8 +363,15 @@ Each is a decision, not an omission:
 - **Cancelling a run.** There is no route and no column for it. A step is one HTTP call to a peer
   that is already deleting; interrupting the wait would abandon the answer rather than the work, and
   a run row saying CANCELLED would be a claim this service cannot make.
-- **Events and causation.** No `qits-eventstream` dependency. Nothing subscribes to a run today and
-  a publisher would arrive with the vocabulary jar every announcing service has.
+- **PUBLISHING an event.** The `qits-eventstream` dependency arrived on 2026-09-05 for the
+  *consuming* half — see "The event bus" — and nothing here announces anything. A run's start, its
+  verdict and what it deleted are all readable on the API, nothing subscribes to any of them today,
+  and a publisher would arrive with the vocabulary jar every announcing service has. `EventEnvelope`
+  is already registered for reflection against that day.
+- **Causation stamping.** `op_run` and `op_step` carry no `causation_id`, so a run started by a
+  deployment does not record which one. The event id is in reach on the frame and the column is a
+  migration, but a run is caused by a WAVE rather than by one event — the debounce is what makes the
+  trigger correct and what makes a single parent a lie.
 - **A size budget for the artifacts GC.** L1.4 of the storage plan; it is a policy the artifacts
   engine has to hold, not a number this service could pass.
 - **OpenTelemetry export.** The siblings ship `quarkus-opentelemetry` with the four preview keys

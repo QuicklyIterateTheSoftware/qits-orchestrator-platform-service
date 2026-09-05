@@ -68,6 +68,13 @@ public class PackagedSurfaceIT {
   private static final String DATABASE = "orchestrator_packaged_it";
 
   /**
+   * The event bus's outbox, on a name of its own — and NOT overridden by the story profile below,
+   * unlike the run log. Nothing writes to it in either suite (the bus is dark in both), so one
+   * database serves them; what must not be shared is the run log, which both suites assert against.
+   */
+  private static final String EVENTSTREAM_DATABASE = "orchestrator_it_eventstream";
+
+  /**
    * The one string that identifies a response as the CLIENT's index.html rather than anything else
    * this process serves. It is also the string that has to agree with {@code
    * quarkus.quinoa.ui-root-path} here and with {@code baseHref} in qits-platform-spa-orchestrator's
@@ -88,6 +95,9 @@ public class PackagedSurfaceIT {
 
     private static final String URL_PROPERTY = "qits.test.packaged-surface-it.db-url";
 
+    private static final String EVENTSTREAM_URL_PROPERTY =
+        "qits.test.packaged-surface-it.eventstream-db-url";
+
     @Override
     public Map<String, String> getConfigOverrides() {
       String dead = "http://127.0.0.1:" + deadPort();
@@ -99,6 +109,20 @@ public class PackagedSurfaceIT {
       overrides.put("QITS_RESOURCE_DB_URL", databaseUrl(URL_PROPERTY, DATABASE));
       overrides.put("QITS_RESOURCE_DB_USERNAME", EmbeddedPg.USER);
       overrides.put("QITS_RESOURCE_DB_PASSWORD", EmbeddedPg.PASSWORD);
+      // The qits-eventstream jar's outbox. A launched process runs in NORMAL mode, so the %test
+      // darkening in application.properties does not reach it and the datasource is opened and
+      // migrated exactly as a deployment's is — which is the point: a process handed no eventstream
+      // url dies at Flyway naming the missing variable, and that is the second half of the resource
+      // contract .config/qits/deployments.yml declares.
+      overrides.put(
+          "QITS_RESOURCE_EVENTSTREAM_URL",
+          databaseUrl(EVENTSTREAM_URL_PROPERTY, EVENTSTREAM_DATABASE));
+      overrides.put("QITS_RESOURCE_EVENTSTREAM_USERNAME", EmbeddedPg.USER);
+      overrides.put("QITS_RESOURCE_EVENTSTREAM_PASSWORD", EmbeddedPg.PASSWORD);
+      // …and the bus itself stays dark, for the same reason every peer is on a dead port: there is
+      // no qits-events here, and enabled the subscriber would redial a stream nobody serves for the
+      // whole of the suite. It is a runtime key, so a launched process takes it.
+      overrides.put("qits.eventstream.enabled", "false");
       overrides.put("qits.orchestrator.targets.artifacts-url", dead);
       overrides.put("qits.orchestrator.targets.containers-url", dead);
       overrides.put("qits.orchestrator.targets.ci-url", dead);
