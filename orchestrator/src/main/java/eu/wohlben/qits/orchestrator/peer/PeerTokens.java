@@ -71,7 +71,9 @@ public class PeerTokens {
   @NamedOidcClient("configuration")
   OidcClient configuration;
 
-  /** Caches and refreshes each peer's token, so a fifteen-step run is not fifteen token requests. */
+  /**
+   * Caches and refreshes each peer's token, so a seventeen-step run is not seventeen token requests.
+   */
   private final Map<String, TokensHelper> helpers =
       Map.of(
           PeerTarget.ARTIFACTS, new TokensHelper(),

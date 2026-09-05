@@ -213,13 +213,19 @@ public class TokenValidationBootstrapIT {
         .get(PROCESSES)
         .then()
         .statusCode(200)
-        .body(GC + ".steps.size()", equalTo(15))
+        .body(GC + ".steps.size()", equalTo(17))
         .body(GC + ".steps.id", hasItem("artifacts.sweep"))
         .body(
             GC + ".steps.find { it.id == 'artifacts.plan' }.dependsOn",
-            contains("pins.deployments", "pins.ci", "pins.dependencies", "pins.images"));
+            contains(
+                "pins.deployments",
+                "pins.ci",
+                "pins.dependencies",
+                "pins.images",
+                "pins.workspaces",
+                "pins.projects"));
     story
-        .note("the gc plan is the pinned one: 15 steps, artifacts.plan depends on all four pin reads"
+        .note("the gc plan is the pinned one: 17 steps, artifacts.plan depends on all six pin reads"
             + " (fail-closed)")
         .as("plan-is-the-pinned-one");
   }

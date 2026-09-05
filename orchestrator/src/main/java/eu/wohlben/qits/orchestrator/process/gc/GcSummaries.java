@@ -123,13 +123,41 @@ final class GcSummaries {
   }
 
   /**
-   * {@code 4 configured container images} — the configuration pin answer: what a workspace, editor
-   * or agent launch would pull.
+   * {@code 4 configured container images} — the configuration pin answer: the versions the NEXT
+   * deploy of a launching service would be given.
    */
   static String imagePins(JsonNode body) {
     int images = body == null ? 0 : body.path("pins").size();
     return images
         + (images == 1 ? " configured container image" : " configured container images");
+  }
+
+  /**
+   * {@code 2 launch images — what a workspace/editor start would pull today} — qits-workspaces'
+   * own answer, read out of the config it is actually running with.
+   *
+   * <p><b>"Today" is the whole distinction from {@link #imagePins}.</b> The configured version is
+   * what the next deploy will hand a service; the effective one is what the service running now
+   * would pull, and it lags until that deploy happens. Only the consumer can say which it is.
+   */
+  static String workspaceLaunchPins(JsonNode body) {
+    return launchPins(body, "a workspace/editor start");
+  }
+
+  /**
+   * {@code 2 launch images — what an agent/refinement start would pull today} — qits-projects'
+   * own answer, on the same terms.
+   */
+  static String projectLaunchPins(JsonNode body) {
+    return launchPins(body, "an agent/refinement start");
+  }
+
+  private static String launchPins(JsonNode body, String start) {
+    int images = body == null ? 0 : body.path("pins").size();
+    return images
+        + (images == 1 ? " launch image — what " : " launch images — what ")
+        + start
+        + " would pull today";
   }
 
   /** {@code 128 identities, 19.3 GB reclaimable, executable=true} — the artifacts plan answer. */

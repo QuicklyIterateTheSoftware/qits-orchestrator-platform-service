@@ -37,6 +37,8 @@ import java.util.Optional;
  * pins.ci                      qits-ci                       GET  /ci/api/daemon
  * pins.dependencies            qits-platform-maintenance     GET  /maintenance/api/pins
  * pins.images                  qits-configuration            GET  /configuration/api/pins
+ * pins.workspaces              qits-workspaces               GET  /workspaces/api/pins
+ * pins.projects                qits-projects                 GET  /projects/api/pins
  * artifacts.plan               qits-artifacts                POST /artifacts/api/gc/plan
  * artifacts.sweep              qits-artifacts                POST /artifacts/api/gc/sweep
  * containers.images            qits-containers               POST /containers/api/gc/images
@@ -66,7 +68,7 @@ import java.util.Optional;
  * <p>The exception is {@link #refuse}, and it exists because <b>no story-controlled value reaches a
  * peer path here</b>. In a repository whose peers are addressed per subject ({@code
  * …/applications/story-misconfigured/resolved}) a refusal can be keyed on the name in the url, and
- * being unreadable is then what that name MEANS. A gc run's thirteen paths are fixed by {@code
+ * being unreadable is then what that name MEANS. A gc run's fifteen paths are fixed by {@code
  * GcProcess.steps()} and identical in every run, so "this peer is down tonight" cannot be spelled
  * as a path. It is spelled as a file instead — written by the one story about a broken peer, in a
  * {@code try}/{@code finally} that always clears it, wiped again when the stub starts, and read
@@ -91,7 +93,8 @@ import java.util.Optional;
  * <p>quarkus-oidc-client caches the token it acquires and re-mints only when it expires, so the
  * {@code POST /idp/token} arrow belongs to the <b>first run of the whole catalogue</b> and to no
  * other. That is a real property of this service rather than an artefact here: {@code PeerTokens}
- * holds a {@code TokensHelper} per peer precisely so that a fifteen-step run is not fifteen token
+ * holds a {@code TokensHelper} per peer precisely so that a seventeen-step run is not seventeen
+ * token
  * requests.
  *
  * <p>What this stand-in chooses is only that the horizon is the whole run: the token says {@code
@@ -132,7 +135,7 @@ public final class StoryPeers {
   /** The dependency pins: what every repository's main still references in its manifests. */
   public static final String MAINTENANCE = "qits-platform-maintenance";
 
-  /** The configured container images a workspace, editor or agent launch would pull. */
+  /** The configured container image versions the NEXT deploy of a launching service would get. */
   public static final String CONFIGURATION = "qits-configuration";
 
   /** The identity provider — here as the outbound token endpoint. Same node {@link MockIdp} is. */
@@ -148,6 +151,8 @@ public final class StoryPeers {
   public static final String STORE_PATH = "/artifacts/api/store/summary";
   public static final String DEPENDENCY_PINS_PATH = "/maintenance/api/pins";
   public static final String IMAGE_PINS_PATH = "/configuration/api/pins";
+  public static final String WORKSPACE_LAUNCH_PINS_PATH = "/workspaces/api/pins";
+  public static final String PROJECT_LAUNCH_PINS_PATH = "/projects/api/pins";
   public static final String IMAGES_PATH = "/containers/api/gc/images";
   public static final String VOLUMES_PATH = "/containers/api/gc/volumes";
   public static final String BUILD_CACHE_PATH = "/containers/api/gc/build-cache";
@@ -183,8 +188,20 @@ public final class StoryPeers {
    */
   public static final String MANIFEST_PIN_VERSION = "2026.903.85122";
 
-  /** The workspace image version a launch would pull, from qits-configuration's own entries. */
+  /** The workspace image version the next deploy would configure, from qits-configuration. */
   public static final String CONFIGURED_IMAGE_VERSION = "2026.904.160522";
+
+  /**
+   * The version a workspace start would pull TODAY, answered by qits-workspaces out of the config it
+   * is actually running with.
+   *
+   * <p><b>It deliberately lags {@link #CONFIGURED_IMAGE_VERSION}</b>, because that lag is the whole
+   * reason the two effective sources exist: a service keeps launching the version it was deployed
+   * with until it is redeployed, and until then the configured answer names an image nobody pulls
+   * while the one everybody pulls is unpinned. Two different versions in one run is what makes the
+   * story readable — a stub that answered the same string twice would prove nothing.
+   */
+  public static final String LAUNCHED_IMAGE_VERSION = "2026.903.120000";
 
   /** The repository the branch sweep iterates over — one row of the projects catalogue. */
   public static final String CATALOGUE_REPOSITORY = "qits-platform-orchestrator";
@@ -324,6 +341,15 @@ public final class StoryPeers {
               + CONFIGURED_IMAGE_VERSION
               + "\",\"application\":\"qits-workspaces\","
               + "\"key\":\"env.QITS_WORKSPACE_IMAGE_VERSION\"}]}";
+      // The EFFECTIVE pins, and the version is the older one on purpose — see the constant.
+      case WORKSPACE_LAUNCH_PINS_PATH ->
+          "{\"pins\":[{\"image\":\"qits/workspace\",\"version\":\""
+              + LAUNCHED_IMAGE_VERSION
+              + "\",\"launches\":\"workspace\"}]}";
+      case PROJECT_LAUNCH_PINS_PATH ->
+          "{\"pins\":[{\"image\":\"qits/workspace\",\"version\":\""
+              + LAUNCHED_IMAGE_VERSION
+              + "\",\"launches\":\"refinement\"}]}";
       case PINS_PATH ->
           "{\"pins\":[{\"applicationName\":\""
               + PINNED_APPLICATION

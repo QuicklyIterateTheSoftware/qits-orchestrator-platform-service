@@ -178,22 +178,21 @@ public class PackagedSurfaceIT {
         .get("/orchestrator/api/runs/" + id)
         .then()
         .statusCode(200)
-        // The whole gc plan, one row per StepDefinition in GcProcess.steps() — fifteen since the two
-        // pin sources and the registry store measurement were added (2026-09-04), the same count
-        // ProcessApiTest and the userflow IT pin. Step 0 is the first peer read and fails against a
-        // dead port; step 6 (the registry plan) depends on all four pin reads and is skipped
-        // fail-closed when they do.
-        .body("steps.size()", Matchers.equalTo(15))
+        // The whole gc plan, one row per StepDefinition in GcProcess.steps() — seventeen since the
+        // two effective launch-pin reads were added (2026-09-05), the same count ProcessApiTest and
+        // the userflow IT pin. Step 0 is the first peer read and fails against a dead port; step 8
+        // (the registry plan) depends on all six pin reads and is skipped fail-closed when they do.
+        .body("steps.size()", Matchers.equalTo(17))
         .body("steps[0].status", Matchers.equalTo("FAILED"))
         .body("steps[0].error", Matchers.containsString("could not be called"))
-        .body("steps[6].status", Matchers.equalTo("SKIPPED"))
-        .body("steps[6].error", Matchers.containsString("skipped:"));
+        .body("steps[8].status", Matchers.equalTo("SKIPPED"))
+        .body("steps[8].error", Matchers.containsString("skipped:"));
 
     // The round trip above would look identical against any database at all, so read the rows back
     // out of the postgres this JVM handed the process through ${QITS_RESOURCE_DB_URL}. That is the
     // whole claim: the shipped expression resolved, and Flyway's migration survived as a classpath
     // resource — exactly the shape a native image drops.
-    assertTrue(stepRows(id) == 15, "the packaged process must have written its steps");
+    assertTrue(stepRows(id) == 17, "the packaged process must have written its steps");
   }
 
   @Test

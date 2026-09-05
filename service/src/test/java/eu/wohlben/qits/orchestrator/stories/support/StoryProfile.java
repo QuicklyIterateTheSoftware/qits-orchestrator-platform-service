@@ -24,7 +24,7 @@ import java.util.Map;
  *
  * <h2>Its own database</h2>
  *
- * <p>The catalogue <b>writes</b>: four gc runs and sixty step rows, then reads the history
+ * <p>The catalogue <b>writes</b>: four gc runs and sixty-eight step rows, then reads the history
  * back. Sharing {@code PackagedSurfaceIT}'s database would make either suite's assertions depend on
  * whether the other had run, so the name here is this profile's own and the mechanism is the
  * parent's {@code databaseUrl}.
@@ -60,7 +60,7 @@ import java.util.Map;
  * <p>{@code quarkus.scheduler.enabled=false} is inherited from the parent and it is load-bearing
  * rather than tidy: {@code GcSchedule} is a cron at 03:00 UTC, and a CI run straddling that minute
  * would start an unattended deletion run out of a test JVM, against peers that now ANSWER. Nor
- * could a recording tell that run's thirteen calls from a story's — the paths are identical — so an
+ * could a recording tell that run's fifteen calls from a story's — the paths are identical — so an
  * arrow would appear or disappear depending on what time the suite ran, which is a {@code
  * networkHash} that never settles.
  *

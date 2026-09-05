@@ -50,7 +50,7 @@ import org.junit.jupiter.api.BeforeAll;
  * apply to it.
  *
  * <p>So one story, one broken peer, and a diagram that says both halves at once: an arrow to
- * qits-ci carrying a 503, ten arrows to the peers that answered anyway, and <b>no arrow to
+ * qits-ci carrying a 503, twelve arrows to the peers that answered anyway, and <b>no arrow to
  * qits-artifacts that would have deleted anything</b> — the plan and the sweep are simply not there.
  * The registry IS reached, once, by the store measurement that needs no pin, so the honest claim is
  * about which calls are missing rather than about which peer is untouched; a presence check cannot
@@ -59,7 +59,7 @@ import org.junit.jupiter.api.BeforeAll;
  * <h2>How the peer is broken</h2>
  *
  * <p>{@link StoryPeers#refuse} is the one piece of state in the stand-in, and the class javadoc over
- * there says why it has to be state here and can be a path elsewhere: a gc run's thirteen paths are
+ * there says why it has to be state here and can be a path elsewhere: a gc run's fifteen paths are
  * fixed by {@code GcProcess.steps()} and identical in every run, so "qits-ci is down tonight" cannot be
  * spelled as a url the story addresses. It is armed inside a {@code try} and cleared in a {@code
  * finally}, and cleared again in {@code @AfterEach} — a refusal that outlived its story would be a
@@ -101,7 +101,7 @@ public class PeerFailureIT {
       is skipped before its body runs — the registry plan, the registry sweep — and the run is
       FAILED, because a peer that could not be read is a failure and not a footnote.
 
-      Nothing else stops. The disk is still measured and so is the registry store, the three pin
+      Nothing else stops. The disk is still measured and so is the registry store, the five pin
       reads that answered are still read, host images are still collected against the deployment
       pins that DID answer, orphan volumes are still swept and the build cache is still pruned —
       which is the largest reclaim of the night and has no keep-set anybody could have protected it
@@ -112,7 +112,7 @@ public class PeerFailureIT {
       A skipped step names the step that actually FAILED rather than the skipped neighbour in
       between, so a reader does not have to walk the graph backwards to find the cause. And the
       whole of what "fail-closed" means is visible on the diagram rather than described: one arrow
-      to qits-ci carrying its 503, ten arrows to the peers that answered, and not one arrow to
+      to qits-ci carrying its 503, twelve arrows to the peers that answered, and not one arrow to
       qits-artifacts that would have deleted anything — the registry is read for its size and asked
       for nothing else.
       """)
@@ -171,10 +171,13 @@ public class PeerFailureIT {
         // The other pin answered, so the keep-set it protects exists and the image sweep runs.
         .body(StoryRuns.stepPath("pins.deployments") + ".status", equalTo("SUCCEEDED"))
         .body(StoryRuns.stepPath("containers.images") + ".status", equalTo("SUCCEEDED"))
-        // The other two pin reads answered as well, and they are the sources no deployment could
-        // have stood in for: what repositories' mains reference, and what a launch would pull.
+        // The other four pin reads answered as well, and they are the sources no deployment could
+        // have stood in for: what repositories' mains reference, what the next deploy would
+        // configure, and what each launching service would pull today.
         .body(StoryRuns.stepPath("pins.dependencies") + ".status", equalTo("SUCCEEDED"))
         .body(StoryRuns.stepPath("pins.images") + ".status", equalTo("SUCCEEDED"))
+        .body(StoryRuns.stepPath("pins.workspaces") + ".status", equalTo("SUCCEEDED"))
+        .body(StoryRuns.stepPath("pins.projects") + ".status", equalTo("SUCCEEDED"))
         // The registry's own opening measurement needs no pin either, so the night still has the
         // one figure that would show the store growing.
         .body(StoryRuns.stepPath("artifacts.usage.before") + ".status", equalTo("SUCCEEDED"))
@@ -235,13 +238,15 @@ public class PeerFailureIT {
 
     // The broken peer, drawn with the status it answered — evidence rather than a claim.
     to(StoryPeers.CI, StoryPeers.label("GET", StoryPeers.DAEMON_PATH, StoryPeers.REFUSED_STATUS));
-    // …and the ten calls that happened anyway. Each store was measured once rather than twice,
+    // …and the twelve calls that happened anyway. Each store was measured once rather than twice,
     // because both after-steps were skipped — it is the same label either way, so the count is what
     // says so and the step assertions above are what make it readable.
     to(StoryPeers.CONTAINERS, StoryPeers.read(StoryPeers.USAGE_PATH));
     to(StoryPeers.ARTIFACTS, StoryPeers.read(StoryPeers.STORE_PATH));
     to(StoryPeers.MAINTENANCE, StoryPeers.read(StoryPeers.DEPENDENCY_PINS_PATH));
     to(StoryPeers.CONFIGURATION, StoryPeers.read(StoryPeers.IMAGE_PINS_PATH));
+    to(StoryPeers.WORKSPACES, StoryPeers.read(StoryPeers.WORKSPACE_LAUNCH_PINS_PATH));
+    to(StoryPeers.PROJECTS, StoryPeers.read(StoryPeers.PROJECT_LAUNCH_PINS_PATH));
     to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.IMAGES_PATH));
     to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.VOLUMES_PATH));
     to(StoryPeers.CONTAINERS, StoryPeers.written(StoryPeers.BUILD_CACHE_PATH));
@@ -261,9 +266,10 @@ public class PeerFailureIT {
                 edge ->
                     StoryPeers.ARTIFACTS.equals(edge.to()) && edge.label().contains("/gc/")),
         () -> "a collection call reached the registry without its pins: " + report.network());
-    // Two in, eleven out. The credential was minted an hour ago by the first run of the catalogue,
-    // so no token arrow belongs here — see StoryPeers on why exactly one story owns that edge.
-    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, FAIL_CLOSED_SLUG, 13);
+    // Two in, thirteen out. The credential was minted an hour ago by the first run of the
+    // catalogue, so no token arrow belongs here — see StoryPeers on why exactly one story owns that
+    // edge.
+    ReportAssertions.assertEdgeCount(CATEGORY_SLUG, FAIL_CLOSED_SLUG, 15);
     ReportAssertions.assertOnlyEdgesFrom(
         CATEGORY_SLUG,
         FAIL_CLOSED_SLUG,

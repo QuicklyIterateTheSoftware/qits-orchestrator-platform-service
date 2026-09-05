@@ -66,6 +66,16 @@ class ProcessApiTest {
             "{\"pins\":[{\"image\":\"qits/workspace\",\"version\":\"1\","
                 + "\"application\":\"qits-workspaces\"}]}"));
     peers.answer(
+        "/workspaces/api/pins",
+        FakePeers.Scripted.ok(
+            "{\"pins\":[{\"image\":\"qits/workspace\",\"version\":\"0\","
+                + "\"launches\":\"workspace\"}]}"));
+    peers.answer(
+        "/projects/api/pins",
+        FakePeers.Scripted.ok(
+            "{\"pins\":[{\"image\":\"qits/project-agent\",\"version\":\"0\","
+                + "\"launches\":\"agent\"}]}"));
+    peers.answer(
         "/ci/api/daemon",
         FakePeers.Scripted.ok("{\"daemonName\":\"qits-ci-daemon\",\"daemonVersion\":\"1\"}"));
     peers.answer("/artifacts/api/gc/plan", FakePeers.Scripted.ok("{\"summary\":{\"executable\":true}}"));
@@ -131,7 +141,7 @@ class ProcessApiTest {
         .body("kind", hasItem("gc"))
         .body("find { it.kind == 'gc' }.name", equalTo("Garbage collection"))
         .body("find { it.kind == 'gc' }.description", notNullValue())
-        .body("find { it.kind == 'gc' }.steps.size()", equalTo(15))
+        .body("find { it.kind == 'gc' }.steps.size()", equalTo(17))
         .body("find { it.kind == 'gc' }.steps[0].id", equalTo("usage.before"))
         .body("find { it.kind == 'gc' }.steps[0].target", equalTo("containers"))
         .body("find { it.kind == 'gc' }.steps[0].dependsOn", equalTo(java.util.List.of()))
@@ -141,17 +151,29 @@ class ProcessApiTest {
         .body("find { it.kind == 'gc' }.steps[4].target", equalTo("maintenance"))
         .body("find { it.kind == 'gc' }.steps[5].id", equalTo("pins.images"))
         .body("find { it.kind == 'gc' }.steps[5].target", equalTo("configuration"))
-        .body("find { it.kind == 'gc' }.steps[6].id", equalTo("artifacts.plan"))
+        // The two effective reads, on peers this process already drives — no new target, and the
+        // target is asserted precisely because it is shared with a step that does something else.
+        .body("find { it.kind == 'gc' }.steps[6].id", equalTo("pins.workspaces"))
+        .body("find { it.kind == 'gc' }.steps[6].target", equalTo("workspaces"))
+        .body("find { it.kind == 'gc' }.steps[7].id", equalTo("pins.projects"))
+        .body("find { it.kind == 'gc' }.steps[7].target", equalTo("projects"))
+        .body("find { it.kind == 'gc' }.steps[8].id", equalTo("artifacts.plan"))
         .body(
-            "find { it.kind == 'gc' }.steps[6].dependsOn",
-            contains("pins.deployments", "pins.ci", "pins.dependencies", "pins.images"))
-        .body("find { it.kind == 'gc' }.steps[11].id", equalTo("repos.catalogue"))
-        .body("find { it.kind == 'gc' }.steps[11].target", equalTo("projects"))
-        .body("find { it.kind == 'gc' }.steps[12].id", equalTo("branches.sweep"))
-        .body("find { it.kind == 'gc' }.steps[12].target", equalTo("workspaces"))
-        .body("find { it.kind == 'gc' }.steps[12].dependsOn", contains("repos.catalogue"))
-        .body("find { it.kind == 'gc' }.steps[13].id", equalTo("artifacts.usage.after"))
-        .body("find { it.kind == 'gc' }.steps[13].dependsOn", contains("artifacts.sweep"));
+            "find { it.kind == 'gc' }.steps[8].dependsOn",
+            contains(
+                "pins.deployments",
+                "pins.ci",
+                "pins.dependencies",
+                "pins.images",
+                "pins.workspaces",
+                "pins.projects"))
+        .body("find { it.kind == 'gc' }.steps[13].id", equalTo("repos.catalogue"))
+        .body("find { it.kind == 'gc' }.steps[13].target", equalTo("projects"))
+        .body("find { it.kind == 'gc' }.steps[14].id", equalTo("branches.sweep"))
+        .body("find { it.kind == 'gc' }.steps[14].target", equalTo("workspaces"))
+        .body("find { it.kind == 'gc' }.steps[14].dependsOn", contains("repos.catalogue"))
+        .body("find { it.kind == 'gc' }.steps[15].id", equalTo("artifacts.usage.after"))
+        .body("find { it.kind == 'gc' }.steps[15].dependsOn", contains("artifacts.sweep"));
   }
 
   @Test
@@ -187,7 +209,7 @@ class ProcessApiTest {
         .body("id", equalTo(id))
         .body("kind", equalTo("gc"))
         .body("dryRun", equalTo(true))
-        .body("steps.size()", equalTo(15))
+        .body("steps.size()", equalTo(17))
         .body("steps[0].id", equalTo("usage.before"))
         .body("steps[0].name", equalTo("Disk usage before"))
         .body("steps[0].target", equalTo("containers"))
@@ -203,29 +225,35 @@ class ProcessApiTest {
         .body("steps[0].error", nullValue())
         .body("steps[0].summary", notNullValue())
         // The registry sweep is the step a dry run does not make…
-        .body("steps[7].id", equalTo("artifacts.sweep"))
-        .body("steps[7].status", equalTo("SKIPPED"))
-        .body("steps[7].error", equalTo("dry run"))
-        .body("steps[7].request", nullValue())
+        .body("steps[9].id", equalTo("artifacts.sweep"))
+        .body("steps[9].status", equalTo("SKIPPED"))
+        .body("steps[9].error", equalTo("dry run"))
+        .body("steps[9].request", nullValue())
         .body(
-            "steps[7].dependsOn",
+            "steps[9].dependsOn",
             contains(
-                "artifacts.plan", "pins.deployments", "pins.ci", "pins.dependencies", "pins.images"))
+                "artifacts.plan",
+                "pins.deployments",
+                "pins.ci",
+                "pins.dependencies",
+                "pins.images",
+                "pins.workspaces",
+                "pins.projects"))
         // …while the branch sweep runs on a dry run too — qits-workspaces judges identically and
         // deletes nothing, so the request carries the flag rather than being withheld.
-        .body("steps[12].id", equalTo("branches.sweep"))
-        .body("steps[12].status", equalTo("SUCCEEDED"))
-        .body("steps[12].request.method", equalTo("POST"))
-        .body("steps[12].request.body", containsString("\"dryRun\":true"))
-        .body("steps[12].request.body", containsString("\"mainBranch\":\"main\""))
-        .body("steps[12].request.body", containsString("environment/"))
-        .body("steps[12].summary", containsString("removed 1 of 4 branches"))
+        .body("steps[14].id", equalTo("branches.sweep"))
+        .body("steps[14].status", equalTo("SUCCEEDED"))
+        .body("steps[14].request.method", equalTo("POST"))
+        .body("steps[14].request.body", containsString("\"dryRun\":true"))
+        .body("steps[14].request.body", containsString("\"mainBranch\":\"main\""))
+        .body("steps[14].request.body", containsString("environment/"))
+        .body("steps[14].summary", containsString("removed 1 of 4 branches"))
         // The registry's own measurement, taken twice like the host's — the plane a `docker system
         // df` receipt cannot see.
-        .body("steps[13].id", equalTo("artifacts.usage.after"))
-        .body("steps[13].status", equalTo("SUCCEEDED"))
+        .body("steps[15].id", equalTo("artifacts.usage.after"))
+        .body("steps[15].status", equalTo("SUCCEEDED"))
         .body(
-            "steps[13].request.url",
+            "steps[15].request.url",
             equalTo("http://qits-artifacts:8080/artifacts/api/store/summary"));
   }
 

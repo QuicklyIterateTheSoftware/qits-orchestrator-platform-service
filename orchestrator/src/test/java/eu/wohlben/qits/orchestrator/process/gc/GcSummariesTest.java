@@ -7,8 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 /**
- * The three readers the registry plane brought with it, over the answers they are written for and
- * over answers they are not.
+ * The five readers the pin sources brought with them — the registry plane's, and the two effective
+ * launch reads — over the answers they are written for and over answers they are not.
  *
  * <p><b>A missing field answers a sentence, never a throw.</b> That is the rule the whole class
  * keeps — a peer that answered 200 with a shape this does not recognise is a SUCCEEDED step with a
@@ -91,5 +91,51 @@ class GcSummariesTest {
     // Nothing released is nothing to keep, and it is an answer rather than a fault.
     assertEquals("0 configured container images", GcSummaries.imagePins(json("{\"pins\":[]}")));
     assertEquals("0 configured container images", GcSummaries.imagePins(null));
+  }
+
+  @Test
+  void theLaunchPinsSayWhoseStartTheyAreAboutAndThatItIsTodays() {
+    // "today" rather than "configured", because that IS the distinction the two sources exist for:
+    // qits-configuration says what the next deploy will hand a service, and these say what the
+    // service running now would actually pull. A caption that read the same as imagePins would hide
+    // the only reason there are six pin sources rather than four.
+    assertEquals(
+        "2 launch images — what a workspace/editor start would pull today",
+        GcSummaries.workspaceLaunchPins(
+            json(
+                """
+                {"pins":[{"image":"qits/workspace","version":"2026.903.120000",
+                          "launches":"workspace"},
+                         {"image":"qits/workspace-editor","version":"2026.904.100239",
+                          "launches":"editor"}]}
+                """)));
+    assertEquals(
+        "2 launch images — what an agent/refinement start would pull today",
+        GcSummaries.projectLaunchPins(
+            json(
+                """
+                {"pins":[{"image":"qits/project-agent","version":"2026.903.090000",
+                          "launches":"agent"},
+                         {"image":"qits/workspace","version":"2026.903.120000",
+                          "launches":"refinement"}]}
+                """)));
+  }
+
+  @Test
+  void aLaunchPinAnswerCanBeSingularEmptyOrUnreadableAndIsStillASentence() {
+    assertEquals(
+        "1 launch image — what a workspace/editor start would pull today",
+        GcSummaries.workspaceLaunchPins(json("{\"pins\":[{\"image\":\"qits/workspace\"}]}")));
+    // A service with no version set launches nothing pinnable, and that is an answer rather than a
+    // fault — the contract says a blank version omits the row.
+    assertEquals(
+        "0 launch images — what an agent/refinement start would pull today",
+        GcSummaries.projectLaunchPins(json("{\"pins\":[]}")));
+    assertEquals(
+        "0 launch images — what a workspace/editor start would pull today",
+        GcSummaries.workspaceLaunchPins(null));
+    assertEquals(
+        "0 launch images — what an agent/refinement start would pull today",
+        GcSummaries.projectLaunchPins(json("{\"message\":\"forbidden\"}")));
   }
 }

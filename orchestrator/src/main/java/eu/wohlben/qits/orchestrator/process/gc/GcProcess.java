@@ -27,16 +27,27 @@ import java.util.List;
  *
  * <p>A pin is something that must survive a collection: an image sha a restart or a rollback would
  * pull ({@code pins.deployments}), the ci daemon binary a run would launch ({@code pins.ci}), a
- * version a repository's main still references in a manifest ({@code pins.dependencies}) and a
- * container image a workspace, editor or agent launch would pull ({@code pins.images}). They are
- * read ONCE per run and handed to every deleter, so every deleter judges against one answer taken
- * at one moment.
+ * version a repository's main still references in a manifest ({@code pins.dependencies}), a
+ * container image the NEXT deploy would configure ({@code pins.images}) and the image a launch
+ * would pull TODAY ({@code pins.workspaces}, {@code pins.projects}). They are read ONCE per run and
+ * handed to every deleter, so every deleter judges against one answer taken at one moment.
  *
- * <p><b>The last two are CONSUMPTION rather than deployment</b>, which is why neither of the first
+ * <p><b>The last four are CONSUMPTION rather than deployment</b>, which is why neither of the first
  * two could stand in for them: nothing deploys a library a pom pins, and nothing deploys the
  * workspace image a person's next click pulls. A release-age rule cannot see either, so before
- * these two steps existed the only thing keeping them alive was how recently somebody happened to
- * ask for them.
+ * these steps existed the only thing keeping them alive was how recently somebody happened to ask
+ * for them.
+ *
+ * <p><b>Six sources because they are in six TENSES, and no two of them are the same claim.</b>
+ * {@code pins.deployments} is what serves right now; {@code pins.ci} is what a run launches;
+ * {@code pins.dependencies} is what source still references; {@code pins.images} is what the NEXT
+ * deploy will configure; {@code pins.workspaces} and {@code pins.projects} are what a launch pulls
+ * TODAY — the EFFECTIVE value, read by the service that would do the pulling, out of the config it
+ * is actually running with. The effective value lags the configured one until that service is
+ * redeployed, and it was exactly that gap the fifth source could not close: a qits-workspaces still
+ * running last week's {@code QITS_WORKSPACE_IMAGE_VERSION} pulls an image qits-configuration has
+ * already moved past, and nothing but access was keeping it alive. Each launching service therefore
+ * answers for itself.
  *
  * <p><b>They are read here because this is the one component that holds an idp client for every
  * peer.</b> qits-artifacts' own HTTP pin readers stay as its no-body fallback, and they are exactly
@@ -44,7 +55,7 @@ import java.util.List;
  * to the caller that can authenticate.
  *
  * <p><b>Fail-closed, and the edges are what makes it so.</b> A failed pin read skips every step that
- * would delete on the strength of that pin — the artifacts plan and sweep depend on all FOUR pin
+ * would delete on the strength of that pin — the artifacts plan and sweep depend on all SIX pin
  * reads, the image sweep on the deployments one — while the volume sweep and the build-cache prune,
  * which need no pins, still run. Nothing deletes against a keep-set it could not read, and nothing
  * that needs no keep-set is stopped by one. A pin source added to the body is a pin source added to
@@ -60,6 +71,8 @@ import java.util.List;
  * pins.ci                ci             GET  /ci/api/daemon
  * pins.dependencies      maintenance    GET  /maintenance/api/pins
  * pins.images            configuration  GET  /configuration/api/pins
+ * pins.workspaces        workspaces     GET  /workspaces/api/pins
+ * pins.projects          projects       GET  /projects/api/pins
  * artifacts.plan         artifacts      POST /artifacts/api/gc/plan {pins}   ← pins.*
  * artifacts.sweep        artifacts      POST /artifacts/api/gc/sweep {pins}  ← artifacts.plan, pins.*
  * containers.images      containers     POST /containers/api/gc/images       ← pins.deployments
@@ -71,6 +84,13 @@ import java.util.List;
  * usage.after            containers     GET  /containers/api/gc/usage        ← everything that frees disk
  * </pre>
 
+ * <p><b>{@code pins.workspaces} and {@code pins.projects} ride peers this process already drives.</b>
+ * qits-workspaces is the branch sweep's peer and qits-projects the catalogue's, so the two effective
+ * pin reads cost no target url, no oidc client and no new configuration — only a second path on a
+ * socket that was already open. That is the whole reason the pattern scales: the service that would
+ * do the pulling is, on this platform, usually a service the orchestrator can already authenticate
+ * to.
+ *
  * <p><b>The branch sweep is the same pin pattern, one store further out.</b> The repository
  * catalogue is its keep-set's complement — the iteration set — read here for the same reason the
  * pins are, and handed to qits-workspaces, which owns branch semantics: what a branch's parent is,
@@ -103,6 +123,8 @@ public class GcProcess implements TechnicalProcess {
   static final String PINS_CI = "pins.ci";
   static final String PINS_DEPENDENCIES = "pins.dependencies";
   static final String PINS_IMAGES = "pins.images";
+  static final String PINS_WORKSPACES = "pins.workspaces";
+  static final String PINS_PROJECTS = "pins.projects";
   static final String ARTIFACTS_PLAN = "artifacts.plan";
   static final String ARTIFACTS_SWEEP = "artifacts.sweep";
   static final String CONTAINERS_IMAGES = "containers.images";
@@ -197,10 +219,34 @@ public class GcProcess implements TechnicalProcess {
                     context.peers().get(PeerTarget.CONFIGURATION, "/configuration/api/pins"),
                     answer -> GcSummaries.imagePins(answer.json()))),
         new StepDefinition(
+            PINS_WORKSPACES,
+            "Workspace launch pins",
+            PeerTarget.WORKSPACES,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.WORKSPACES, "/workspaces/api/pins"),
+                    answer -> GcSummaries.workspaceLaunchPins(answer.json()))),
+        new StepDefinition(
+            PINS_PROJECTS,
+            "Project launch pins",
+            PeerTarget.PROJECTS,
+            List.of(),
+            context ->
+                StepResult.of(
+                    context.peers().get(PeerTarget.PROJECTS, "/projects/api/pins"),
+                    answer -> GcSummaries.projectLaunchPins(answer.json()))),
+        new StepDefinition(
             ARTIFACTS_PLAN,
             "Plan the registry collection",
             PeerTarget.ARTIFACTS,
-            List.of(PINS_DEPLOYMENTS, PINS_CI, PINS_DEPENDENCIES, PINS_IMAGES),
+            List.of(
+                PINS_DEPLOYMENTS,
+                PINS_CI,
+                PINS_DEPENDENCIES,
+                PINS_IMAGES,
+                PINS_WORKSPACES,
+                PINS_PROJECTS),
             context ->
                 StepResult.of(
                     context
@@ -212,11 +258,18 @@ public class GcProcess implements TechnicalProcess {
             "Sweep the registry",
             PeerTarget.ARTIFACTS,
             // Every pin read as well as the plan, because this is the step that DELETES and its body
-            // is its own pinsBody rather than the plan's. The plan edge already carries all four
+            // is its own pinsBody rather than the plan's. The plan edge already carries all six
             // transitively; naming them here is the doctrine rather than the mechanism — a step that
             // deletes on the strength of a pin carries that pin's edge, so a source added to the
             // body is a source that cannot be added without this list noticing.
-            List.of(ARTIFACTS_PLAN, PINS_DEPLOYMENTS, PINS_CI, PINS_DEPENDENCIES, PINS_IMAGES),
+            List.of(
+                ARTIFACTS_PLAN,
+                PINS_DEPLOYMENTS,
+                PINS_CI,
+                PINS_DEPENDENCIES,
+                PINS_IMAGES,
+                PINS_WORKSPACES,
+                PINS_PROJECTS),
             context ->
                 context.dryRun()
                     ? StepResult.skipped("dry run")
@@ -320,21 +373,24 @@ public class GcProcess implements TechnicalProcess {
    * The pin set, as qits-artifacts takes it:
    *
    * <pre>
-   * {"pins": {"deployments":     &lt;the deployments answer, verbatim&gt;,
-   *           "ciDaemon":        &lt;the ci answer, verbatim&gt;,
-   *           "dependencies":    &lt;the maintenance answer, verbatim&gt;,
-   *           "configuredImages":&lt;the configuration answer, verbatim&gt;}}
+   * {"pins": {"deployments":      &lt;the deployments answer, verbatim&gt;,
+   *           "ciDaemon":         &lt;the ci answer, verbatim&gt;,
+   *           "dependencies":     &lt;the maintenance answer, verbatim&gt;,
+   *           "configuredImages": &lt;the configuration answer, verbatim&gt;,
+   *           "workspaceLaunches":&lt;the workspaces answer, verbatim&gt;,
+   *           "projectLaunches":  &lt;the projects answer, verbatim&gt;}}
    * </pre>
    *
    * <p><b>Verbatim means the bytes the peer sent.</b> Each member is the other service's whole
-   * response document, re-embedded rather than re-shaped: the four contracts belong to
-   * qits-platform-deployments, qits-ci, qits-platform-maintenance and qits-configuration, and a
-   * projection here would be a fifth copy of them to keep in step.
+   * response document, re-embedded rather than re-shaped: the six contracts belong to
+   * qits-platform-deployments, qits-ci, qits-platform-maintenance, qits-configuration,
+   * qits-workspaces and qits-projects, and a projection here would be a seventh copy of them to keep
+   * in step.
    *
    * <p><b>A member this run could not read is ABSENT, not null.</b> qits-artifacts reads a missing
    * member as that pin source being unanswered, which makes the plan not executable and aborts a
    * sweep — the fail-closed rule, unchanged. In practice the edges mean this step never runs
-   * without all four, so the absent case is the belt.
+   * without all six, so the absent case is the belt.
    */
   private static String pinsBody(RunContext context) {
     ObjectNode pins = JSON.createObjectNode();
@@ -342,6 +398,8 @@ public class GcProcess implements TechnicalProcess {
     context.answer(PINS_CI).ifPresent(node -> pins.set("ciDaemon", node));
     context.answer(PINS_DEPENDENCIES).ifPresent(node -> pins.set("dependencies", node));
     context.answer(PINS_IMAGES).ifPresent(node -> pins.set("configuredImages", node));
+    context.answer(PINS_WORKSPACES).ifPresent(node -> pins.set("workspaceLaunches", node));
+    context.answer(PINS_PROJECTS).ifPresent(node -> pins.set("projectLaunches", node));
     ObjectNode body = JSON.createObjectNode();
     body.set("pins", pins);
     return body.toString();

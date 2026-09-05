@@ -30,8 +30,10 @@ so what comes after it still runs.
 | `pins.ci` | ci | `GET /ci/api/daemon` | — |
 | `pins.dependencies` | maintenance | `GET /maintenance/api/pins` | — |
 | `pins.images` | configuration | `GET /configuration/api/pins` | — |
-| `artifacts.plan` | artifacts | `POST /artifacts/api/gc/plan {pins}` | pins.deployments, pins.ci, pins.dependencies, pins.images |
-| `artifacts.sweep` | artifacts | `POST /artifacts/api/gc/sweep {pins}` — SKIPPED `dry run` on a dry run | artifacts.plan, pins.deployments, pins.ci, pins.dependencies, pins.images |
+| `pins.workspaces` | workspaces | `GET /workspaces/api/pins` | — |
+| `pins.projects` | projects | `GET /projects/api/pins` | — |
+| `artifacts.plan` | artifacts | `POST /artifacts/api/gc/plan {pins}` | pins.deployments, pins.ci, pins.dependencies, pins.images, pins.workspaces, pins.projects |
+| `artifacts.sweep` | artifacts | `POST /artifacts/api/gc/sweep {pins}` — SKIPPED `dry run` on a dry run | artifacts.plan, pins.deployments, pins.ci, pins.dependencies, pins.images, pins.workspaces, pins.projects |
 | `containers.images` | containers | `POST /containers/api/gc/images` | pins.deployments |
 | `containers.volumes` | containers | `POST /containers/api/gc/volumes` | usage.before |
 | `containers.build-cache` | containers | `POST /containers/api/gc/build-cache` | usage.before |
@@ -43,10 +45,12 @@ so what comes after it still runs.
 **The pins are read once and handed on.** `artifacts.plan` and `artifacts.sweep` send
 
 ```json
-{"pins": {"deployments":      <the deployments answer, verbatim>,
-          "ciDaemon":         <the ci answer, verbatim>,
-          "dependencies":     <the maintenance answer, verbatim>,
-          "configuredImages": <the configuration answer, verbatim>}}
+{"pins": {"deployments":       <the deployments answer, verbatim>,
+          "ciDaemon":          <the ci answer, verbatim>,
+          "dependencies":      <the maintenance answer, verbatim>,
+          "configuredImages":  <the configuration answer, verbatim>,
+          "workspaceLaunches": <the workspaces answer, verbatim>,
+          "projectLaunches":   <the projects answer, verbatim>}}
 ```
 
 qits-artifacts uses these instead of its own HTTP readers; a missing member means that source is
@@ -54,12 +58,22 @@ unanswered, which makes the plan not executable and aborts a sweep. The readers 
 this is the one component holding an idp client for every peer — theirs had no credential and were
 401-ing.
 
-**Two of the four sources are CONSUMPTION rather than deployment**, and that is why the first two
+**Four of the six sources are CONSUMPTION rather than deployment**, and that is why the first two
 could not stand in for them: nothing deploys the library a pom pins, and nothing deploys the
 workspace image a person's next click pulls. `pins.dependencies` is what every repository's main
 still references in its manifests (qits-platform-maintenance); `pins.images` is the configured
 container image versions a workspace, editor or agent launch resolves (qits-configuration). Before
 they were read, all that kept either alive was how recently somebody happened to ask for it.
+
+**Six sources because they are in six tenses.** `pins.deployments` is what serves right now,
+`pins.ci` what a run launches, `pins.dependencies` what source still references, `pins.images` what
+the NEXT deploy will configure — and `pins.workspaces` / `pins.projects` what a launch pulls TODAY.
+That last one is the EFFECTIVE value, answered by the service that would do the pulling out of the
+config it is actually running with, and it lags the configured one until that service is redeployed.
+A qits-workspaces still running last week's `QITS_WORKSPACE_IMAGE_VERSION` pulls an image
+qits-configuration has already moved past, and nothing but access was keeping it alive. Both ride
+peers this process already drives — no new target url, no new oidc client, only a second path on a
+socket that was already open.
 
 **The registry plane is measured too, and it has its own pair.** `artifacts.usage.before` and
 `artifacts.usage.after` read `GET /artifacts/api/store/summary` — `diskTotalBytes`, `ociUnionBytes`,
