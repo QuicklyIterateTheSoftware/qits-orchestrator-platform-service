@@ -59,9 +59,9 @@
              qits-integrations-quarkus. The url is a property so the image build can point it at the
              address the builder container can actually reach — see docker/Dockerfile and
              .qits-maven-settings.xml. -->
-        <qits.db-core.version>2026.905.91442</qits.db-core.version>
-        <qits.auth-core.version>2026.905.91442</qits.auth-core.version>
-        <qits.arch-rules.version>2026.905.91442</qits.arch-rules.version>
+        <qits.db-core.version>2026.906.171046</qits.db-core.version>
+        <qits.auth-core.version>2026.906.171046</qits.auth-core.version>
+        <qits.arch-rules.version>2026.906.171046</qits.arch-rules.version>
         <!-- THE PLATFORM EVENT BUS, and this repository's first consumption of it: the outbox, the
              idempotent PUT, the durable listener and CausationScope, published by
              components/qits-eventstream into the same platform Maven repository as the three
@@ -86,7 +86,7 @@
         <!-- The recording service mocks those ITs boot against (the generic MockService plus
              idp.MockIdp), published by qits-integrations-quarkus beside qits-auth-core,
              qits-arch-rules and qits-db-core. -->
-        <qits.service-mock.version>2026.905.91442</qits.service-mock.version>
+        <qits.service-mock.version>2026.906.171046</qits.service-mock.version>
         <qits.maven.repository.url>http://registry.dev.localhost:8080/artifacts/maven/maven</qits.maven.repository.url>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
