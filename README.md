@@ -213,10 +213,14 @@ left a 13.7 GB bootstrap builder untouched every night — it was smaller than t
 shared keep-storage never reached it. qits-containers falls back to `keepStorageBytes` when
 `builderKeepStorageBytes` is absent.
 
-**Four tier services by configured url.** qits-artifacts, qits-containers, qits-ci and
-qits-configuration are per environment (`dev-qits-artifacts`, `dev-qits-configuration`) while this
-service is platform tier, so a live platform injects the qualified names. Known debt, the same one
-qits-configuration carries.
+**Three tier services by configured url.** qits-artifacts, qits-containers and qits-ci are per
+environment (`dev-qits-artifacts`, `dev-qits-ci`) while this service is platform tier, so a live
+platform injects the qualified names. Known debt.
+
+**`configuration-url` ships correct since 2026-09-07.** qits-configuration became a PLATFORM service
+in this epic, so it answers to the bare `qits-configuration` and joins the other platform-tier peers
+whose shipped default resolves as written — no injection needed. It was per environment until then,
+which is why the key exists at all; a deployment may still override it, it just no longer has to.
 
 **Outbound credentials** are eight named oidc clients — `artifacts`, `containers`, `ci`,
 `deployments`, `projects`, `workspaces`, `maintenance`, `configuration` — all
