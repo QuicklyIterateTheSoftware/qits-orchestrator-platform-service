@@ -134,6 +134,24 @@ disabled and stays disabled — the extension creates it whether or not anything
 plan lists every condemned identity on the platform; the store here is a log a person reads, and an
 unbounded column would let one peer's verbosity decide this service's disk.
 
+## Telemetry
+
+`quarkus-opentelemetry` exports traces, logs and metrics to qits-observability. One key names the
+receiver — `qits.observability.url`, scheme/host/port and no path, the shape the peer urls already
+have — and the endpoint is derived from it; the protocol is `http/protobuf` because the receiver does
+not speak the gRPC default. The SDK is dark in `%dev`/`%test`, the same policy as the event bus.
+
+**The four `quarkus.otel.logs.*` keys are spelled out even where they are Quarkus' own defaults.**
+That integration is still labelled PREVIEW, and it is the whole of what ships this service's logs, so
+a changed default would end log export with a green build and no error anywhere; written down, it is
+a diff instead. `quarkus.otel.logs.level=INFO` is the one non-default — the outbound floor, which is
+what keeps a gc run's account (the schedule and the deploy trigger starting one, the executor's line
+per finished run) exported and `GcDeployTrigger`'s debounce bookkeeping at DEBUG local.
+
+`telemetry/OtelLogConfigTest` is the drift guard and asserts configuration only; that a logger call
+really becomes an exported record is proven once, in qits-events. `quarkus.application.name` is the
+telemetry source key — it follows the deployed identity, so do not touch it.
+
 ## The event bus
 
 `service/…/bus/` is the whole of the bus's **SEAMS**. The machinery is the published
@@ -374,6 +392,4 @@ Each is a decision, not an omission:
   trigger correct and what makes a single parent a lie.
 - **A size budget for the artifacts GC.** L1.4 of the storage plan; it is a policy the artifacts
   engine has to hold, not a number this service could pass.
-- **OpenTelemetry export.** The siblings ship `quarkus-opentelemetry` with the four preview keys
-  spelled out; adding it is the extension plus that block.
 - **A committed `docs/openapi.yml`.** The document is served at `/orchestrator/q/openapi`.
