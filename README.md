@@ -139,8 +139,8 @@ made. It is this service's only use of the event bus, and it publishes nothing.
 ## API
 
 Under `/orchestrator/api`. Every route takes `qits:admin` (a person, via qits-gateway's
-`X-Qits-User` / `X-Qits-Roles`) or `qits:system` (a machine, via a bearer). There is no anonymous
-route.
+`X-Qits-User` / `X-Qits-Roles`) or `qits:system` (a machine, via a bearer). Every `GET` also takes
+`qits:agent` (a commissioned agent); starting a run does not. There is no anonymous route.
 
 ```
 GET  /processes                      → [{kind, name, description,

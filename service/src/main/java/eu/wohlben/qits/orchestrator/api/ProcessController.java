@@ -32,7 +32,8 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
  * gateway's forward-auth headers) and {@code qits:system} (a machine, through a bearer validated
  * against qits-platform-idp). A run is started by an operator in a browser and could as well be
  * started by a machine; a machine-only guard would lock the operator out of the button this service
- * exists to offer. There is no anonymous route here.
+ * exists to offer. There is no anonymous route here. The reads also take {@code qits:agent} (a
+ * commissioned agent); starting a run does not.
  */
 @Path("/processes")
 @Produces(MediaType.APPLICATION_JSON)
@@ -61,7 +62,7 @@ public class ProcessController {
   @GET
   @Operation(summary = "Every technical process, with its steps and their dependencies")
   @APIResponse(responseCode = "200", description = "The processes")
-  @RolesAllowed({"qits:admin", "qits:system"})
+  @RolesAllowed({"qits:admin", "qits:system", "qits:agent"})
   public List<ProcessDto> processes() {
     return runs.processes();
   }
@@ -77,7 +78,7 @@ public class ProcessController {
   @Operation(summary = "One process's runs, newest first")
   @APIResponse(responseCode = "200", description = "The runs")
   @APIResponse(responseCode = "404", description = "No process of that kind")
-  @RolesAllowed({"qits:admin", "qits:system"})
+  @RolesAllowed({"qits:admin", "qits:system", "qits:agent"})
   public List<RunSummaryDto> runs(
       @PathParam("kind") String kind,
       @QueryParam("limit") @DefaultValue("" + DEFAULT_LIMIT) int limit) {
