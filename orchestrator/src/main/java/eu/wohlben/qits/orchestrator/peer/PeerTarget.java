@@ -3,10 +3,14 @@ package eu.wohlben.qits.orchestrator.peer;
 /**
  * The eight peers, by their wire name.
  *
- * <p>Constants rather than an enum because the same string is three things at once: the value a
- * step reports as its {@code target}, the middle of the config key {@code
- * qits.orchestrator.targets.<name>-url}, and the name of the oidc client that mints for it. An enum
- * would have to spell the mapping out three times; a string spells it once.
+ * <p>Constants rather than an enum because the same string is two things at once: the value a step
+ * reports as its {@code target}, and the middle of the config key {@code
+ * qits.orchestrator.targets.<name>-url}. An enum would have to spell the mapping out twice; a
+ * string spells it once.
+ *
+ * <p>Before service-client-identity-plan.md's C4 this string was also the name of a dedicated oidc
+ * client — one per peer, because a token was cut FOR one service. {@code PeerTokens} now mints from
+ * one named client, {@code qits}, for every peer alike.
  */
 public final class PeerTarget {
 

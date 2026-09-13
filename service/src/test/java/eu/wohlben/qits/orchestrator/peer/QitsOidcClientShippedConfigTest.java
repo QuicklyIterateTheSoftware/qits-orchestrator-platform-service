@@ -1,0 +1,76 @@
+package eu.wohlben.qits.orchestrator.peer;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.quarkus.test.junit.QuarkusTest;
+import java.util.Optional;
+import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.config.ConfigProvider;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The one named oidc client, {@code qits}, as the shipped {@code microprofile-config.properties}
+ * resolves it with no {@code QITS_RESOURCE_IDP_*} or old extras env set — the "nothing configured"
+ * arm every clone-alone build and every other test in this repository runs on
+ * (service-client-identity-plan.md, C4).
+ *
+ * <p>{@link QitsOidcClientOldExtrasFallbackTest} and {@link
+ * QitsOidcClientResourceOverridesOldExtrasTest} hold the other two arms — the old extras keys
+ * alone, and the new resource keys winning over them — each in its own {@code @QuarkusTest} because
+ * a {@code @TestProfile}'s config overrides are fixed for the life of one boot.
+ */
+@QuarkusTest
+class QitsOidcClientShippedConfigTest {
+
+  private static String value(String key) {
+    Config config = ConfigProvider.getConfig();
+    return config.getValue(key, String.class);
+  }
+
+  @Test
+  void theQitsClientResolvesItsOwnLiteralDefaults() {
+    assertEquals("http://qits-platform-idp:8080/idp", value("quarkus.oidc-client.qits.auth-server-url"));
+    assertEquals("qits-platform-orchestrator", value("quarkus.oidc-client.qits.client-id"));
+    // Empty, not absent — SmallRye reads a configured-empty String as null, so an empty secret reads
+    // as an empty Optional rather than as "" itself.
+    Optional<String> secret =
+        ConfigProvider.getConfig()
+            .getOptionalValue("quarkus.oidc-client.qits.credentials.secret", String.class);
+    assertTrue(secret.isEmpty());
+    // One audience for every peer now, never one of the eight peer-specific ones the old clients
+    // carried.
+    assertEquals("qits-platform", value("quarkus.oidc-client.qits.grant-options.client.audience"));
+  }
+
+  @Test
+  void theClientStaysDisabledUnderTest() {
+    // %test.quarkus.oidc-client.qits.client-enabled=false wins over the shipped expression
+    // regardless of what QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED says — the arm every test in
+    // this repository is on, so a suite never dials a real idp.
+    assertEquals("false", value("quarkus.oidc-client.qits.client-enabled"));
+  }
+
+  @Test
+  void theEightOldClientsStayShippedDisabled() {
+    // Nothing injects any of these any more (PeerTokens moved to `qits`); they stay only so a
+    // deployment's leftover QUARKUS_OIDC_CLIENT_<PEER>_CLIENT_ENABLED=true cannot make one of them
+    // fetch a token nobody asks for at boot.
+    String[] oldClients = {
+      PeerTarget.ARTIFACTS,
+      PeerTarget.CONTAINERS,
+      PeerTarget.CI,
+      PeerTarget.DEPLOYMENTS,
+      PeerTarget.PROJECTS,
+      PeerTarget.WORKSPACES,
+      PeerTarget.MAINTENANCE,
+      PeerTarget.CONFIGURATION
+    };
+    for (String peer : oldClients) {
+      assertEquals(
+          "false",
+          value("quarkus.oidc-client." + peer + ".client-enabled"),
+          "the old " + peer + " client must stay disabled");
+    }
+  }
+}

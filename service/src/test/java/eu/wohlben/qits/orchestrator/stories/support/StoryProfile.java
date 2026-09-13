@@ -49,10 +49,12 @@ import java.util.Map;
  *   <li><b>the eight target urls</b> — {@link StoryPeers}, replacing the parent's dead port. The
  *       parent points them at a port nothing listens on because its claim is that a failure reaches
  *       a readable row; the claim here is what a run actually DOES, which needs peers that answer.
- *   <li><b>the eight named oidc clients, ENABLED</b> — shipped off, because a platform running its
- *       peers open on qits-net behind forward-auth is a supported posture. Turning them on is what
- *       puts this service's own machine credential in the diagram, and it is the half of {@code
- *       PeerClient}'s "two credentials on every call" that a disabled client hides.
+ *   <li><b>the one named oidc client, {@code qits}, ENABLED</b> — shipped off, because a platform
+ *       running its peers open on qits-net behind forward-auth is a supported posture. Turning it on
+ *       is what puts this service's own machine credential in the diagram, and it is the half of
+ *       {@code PeerClient}'s "two credentials on every call" that a disabled client hides. One
+ *       client for all eight peers now (service-client-identity-plan.md, C4): the open calling model
+ *       means a single audience, {@code qits-platform}, is good for every one of them.
  * </ul>
  *
  * <h2>The clock stays OFF, and that is a stated coverage gap</h2>
@@ -79,13 +81,13 @@ public class StoryProfile extends PackagedSurfaceIT.PackagedUnderTarget {
   private static final String DATABASE = "orchestrator_stories_it";
 
   /**
-   * The secret each named client presents with its {@code client_credentials} grant. It is a
-   * fixture rather than a credential — {@link StoryPeers} mints for anybody — and it is here
-   * because the extension refuses to start a client that has no way to authenticate.
+   * The secret the one named client, {@code qits}, presents with its {@code client_credentials}
+   * grant. It is a fixture rather than a credential — {@link StoryPeers} mints for anybody — and it
+   * is here because the extension refuses to start a client that has no way to authenticate.
    */
   public static final String CLIENT_SECRET = "story-orchestrator-client-secret";
 
-  /** The eight peers, which are also the eight oidc client names — {@code PeerTarget}'s constants. */
+  /** The eight peers and the target url key each one is read from — {@code PeerTarget}'s constants. */
   private static final Map<String, String> TARGET_URL_KEYS =
       Map.of(
           "artifacts", "qits.orchestrator.targets.artifacts-url",
@@ -110,21 +112,17 @@ public class StoryProfile extends PackagedSurfaceIT.PackagedUnderTarget {
     overrides.put("qits.auth.machine.required", "true");
     overrides.put("quarkus.oidc.auth-server-url", idp.baseUrl());
 
-    TARGET_URL_KEYS.forEach(
-        (peer, key) -> {
-          // Where the peer is — one stub answering as all eight, told apart by path prefix.
-          overrides.put(key, peers);
-          // …and the credential this service presents to it. A token is cut FOR one service, which
-          // is why there are eight clients rather than one; only the audience differs, and it is the
-          // one value the shipped defaults deliberately leave unset because it is
-          // environment-qualified. A story names the bare peer, which is what a single-environment
-          // platform would.
-          overrides.put("quarkus.oidc-client." + peer + ".client-enabled", "true");
-          overrides.put("quarkus.oidc-client." + peer + ".auth-server-url", peers + "/idp");
-          overrides.put("quarkus.oidc-client." + peer + ".credentials.secret", CLIENT_SECRET);
-          overrides.put(
-              "quarkus.oidc-client." + peer + ".grant-options.client.audience", peer);
-        });
+    // Where each peer is — one stub answering as all eight, told apart by path prefix.
+    TARGET_URL_KEYS.forEach((peer, key) -> overrides.put(key, peers));
+
+    // …and the ONE credential this service presents to every one of them (service-client-identity-
+    // plan.md, C4): a token is cut for the platform now, not for one peer, so one client and one
+    // audience — qits-platform, what a single-environment platform's own receivers accept — serve
+    // all eight calls.
+    overrides.put("quarkus.oidc-client.qits.client-enabled", "true");
+    overrides.put("quarkus.oidc-client.qits.auth-server-url", peers + "/idp");
+    overrides.put("quarkus.oidc-client.qits.credentials.secret", CLIENT_SECRET);
+    overrides.put("quarkus.oidc-client.qits.grant-options.client.audience", "qits-platform");
     return overrides;
   }
 }

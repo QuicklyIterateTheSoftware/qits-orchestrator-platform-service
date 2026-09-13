@@ -55,9 +55,11 @@ import java.util.Optional;
  * edge is — and eight servers would only be seven more ports to park.
  *
  * <p><b>The ninth is qits-platform-idp</b>, {@code POST /idp/token}: the outbound half of this
- * service's identity, which the six named oidc clients present to their peers. It draws as the same
- * node {@link MockIdp} does, because it is the same component — the mock serves the inbound half
- * (the JWKS this service validates callers against) and this stub serves the outbound half.
+ * service's identity, which the one named oidc client, {@code qits}, presents to every peer alike
+ * (service-client-identity-plan.md, C4 — one client replaced eight, one per peer, before it). It
+ * draws as the same node {@link MockIdp} does, because it is the same component — the mock serves
+ * the inbound half (the JWKS this service validates callers against) and this stub serves the
+ * outbound half.
  *
  * <h2>Stateless, with one deliberate exception</h2>
  *
@@ -93,22 +95,23 @@ import java.util.Optional;
  * <p>quarkus-oidc-client caches the token it acquires and re-mints only when it expires, so the
  * {@code POST /idp/token} arrow belongs to the <b>first run of the whole catalogue</b> and to no
  * other. That is a real property of this service rather than an artefact here: {@code PeerTokens}
- * holds a {@code TokensHelper} per peer precisely so that a seventeen-step run is not seventeen
- * token
- * requests.
+ * holds one {@code TokensHelper} for the one named client precisely so that a seventeen-step run is
+ * not seventeen token requests.
  *
  * <p>What this stand-in chooses is only that the horizon is the whole run: the token says {@code
- * expires_in: 3600}, so the mints land in exactly one story and every other story's edge count is
+ * expires_in: 3600}, so the mint lands in exactly one story and every other story's edge count is
  * stable. Measured elsewhere the other way — at {@code expires_in: 1} (and at {@code 0}, which
  * quarkus reads as the same thing) the credential outlives some runs and not others, and the arrow
  * appears in whichever diagram happened to be more than a second after the last. An edge that comes
  * and goes with the clock is a {@code networkHash} that never settles.
  *
- * <p>Eight clients mint eight tokens on that first run and they draw as ONE arrow: an edge is
- * {@code (kind, from, to, label)} and the six are identical in all four. The corollary to know when
- * running one class alone: {@code stories.collection.GarbageCollectionRunIT} claims that arrow, and
- * any other story class run on its own inherits it and fails its own edge count — loudly, which is
- * the right way for that assumption to break.
+ * <p>Before service-client-identity-plan.md's C4 this was eight clients minting eight tokens on the
+ * first run, drawn as ONE arrow because an edge is {@code (kind, from, to, label)} and all eight
+ * were identical in every one of those four. One named client, {@code qits}, now makes it literally
+ * one mint rather than eight collapsed into one label. The corollary to know when running one class
+ * alone: {@code stories.collection.GarbageCollectionRunIT} claims that arrow, and any other story
+ * class run on its own inherits it and fails its own edge count — loudly, which is the right way for
+ * that assumption to break.
  */
 public final class StoryPeers {
 

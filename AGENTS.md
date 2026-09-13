@@ -115,7 +115,7 @@ if it does not, **do not**.
 
 `PeerClient` is the one way this service touches another. Two credentials on every call and they are
 not alternatives: the forward-auth pair (`X-Qits-User: qits-platform-orchestrator`,
-`X-Qits-Roles: qits:system`) always, and a bearer where that peer's oidc client is enabled.
+`X-Qits-Roles: qits:system`) always, and a bearer where the `qits` oidc client is enabled.
 
 **Nothing throws.** A name that does not resolve, a timeout, a body that is not JSON — each comes
 back as a `PeerAnswer` carrying the sentence, because a step's job is to record what happened and a
@@ -125,10 +125,15 @@ process whose steps had to catch would put half its outcomes on a path nobody re
 that matters belongs to the call: an anonymous call to a guarded peer comes back 401 and the step
 records the url and the status, which is more useful than a mint failure one layer earlier.
 
-**Eight named clients, one per peer**, because a token is cut FOR one service. The audience is the
-one value the shipped defaults leave unset: it is environment-qualified, and an image every
-environment shares must not name a tier it may not be running in. The unnamed default client is
-disabled and stays disabled — the extension creates it whether or not anything injects it.
+**One named client, `qits`, for all eight peers** (service-client-identity-plan.md, C4). It used to
+be eight — one per peer, because a token was cut FOR one service and qits-artifacts refused a bearer
+addressed to qits-containers. The plan's open calling model removed that refusal: every peer now
+accepts a bearer addressed to `qits-platform`, so one client and one audience serve all eight calls.
+Two peers this service could never reach with a bearer before — qits-platform-maintenance and
+qits-configuration — get one for the first time, because a live deployment only ever turned on six
+of the old eight clients (`ComposeTemplate.java`); the `qits` client is turned on or off as a whole.
+The unnamed default client is disabled and stays disabled — the extension creates it whether or not
+anything injects it.
 
 **A response is bounded at 1 MiB** with a marker appended, cut on a character boundary. An artifacts
 plan lists every condemned identity on the platform; the store here is a log a person reads, and an

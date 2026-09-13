@@ -218,19 +218,22 @@ qits-configuration are per environment (`dev-qits-artifacts`, `dev-qits-configur
 service is platform tier, so a live platform injects the qualified names. Known debt, the same one
 qits-configuration carries.
 
-**Outbound credentials** are eight named oidc clients — `artifacts`, `containers`, `ci`,
-`deployments`, `projects`, `workspaces`, `maintenance`, `configuration` — all
-`client-id=qits-platform-orchestrator`, all shipped `client-enabled=false`. A token is cut for one
-service, which is why there are eight; only the audience differs, and it is the one value not
-defaulted, because it is environment-qualified. A deployment turns one on with
+**Outbound credentials** are ONE named oidc client, `qits` (service-client-identity-plan.md, C4),
+`client-id=qits-platform-orchestrator`, shipped `client-enabled=false`. It replaces the eight
+peer-specific clients this service used to hold — under the platform's open calling model a token
+cut for one service is good for every peer, so one client and one audience, `qits-platform`, serve
+all eight calls. Its keys read `QITS_RESOURCE_IDP_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` first and
+fall back to the old `artifacts` client's env names, so nothing here breaks before this repository
+declares `resources: idp:client` in its own `.config/qits/deployments.yml` (a later, separate
+commit). A deployment turns it on with
 
 ```
-QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED=true
-QUARKUS_OIDC_CLIENT_ARTIFACTS_CREDENTIALS_SECRET=<this service's idp client secret>
-QUARKUS_OIDC_CLIENT_ARTIFACTS_GRANT_OPTIONS_CLIENT_AUDIENCE=dev-qits-artifacts
+QUARKUS_OIDC_CLIENT_QITS_CLIENT_ENABLED=true
+QUARKUS_OIDC_CLIENT_QITS_CREDENTIALS_SECRET=<this service's idp client secret>
 ```
 
-Off, calls go out with the forward-auth pair alone (`X-Qits-User: qits-platform-orchestrator`,
+(or, once the resource is declared, `QITS_RESOURCE_IDP_*`, injected by qits-deployments). Off, calls
+go out with the forward-auth pair alone (`X-Qits-User: qits-platform-orchestrator`,
 `X-Qits-Roles: qits:system`), which every call carries regardless.
 
 **The store** is its own PostgreSQL database, `qits_platform_orchestrator`, declared by
