@@ -1,0 +1,178 @@
+# What qits-platform-orchestrator declares about its own configuration.
+#
+# The deployer reads this file from the git host at the RELEASED TAG and POSTs it to
+# qits-configuration before it schedules the deployment. qits-configuration parses it with its one
+# strict parser (DeclarationParser): `keys` is the whole top level, and a key takes only type,
+# default and description.
+#
+# WHY THIS FILE EXISTS. qits-configuration flags a stored entry `orphaned` only when the application
+# has a declaration that does not list the key. Without this file nothing of this application is
+# flagged, so its dead entries cannot be seen or removed from the configuration UI. Every key below
+# is still read by this service. Any stored entry NOT listed here is one this service no longer
+# reads, and a person may remove it (service-client-identity-plan.md, C9 and C10).
+#
+# THE LIST MUST BE COMPLETE. A key missing here is flagged orphaned while it is still needed, and the
+# UI invites a person to delete it. Add a key here in the same commit that starts reading it.
+#
+# NO KEY HAS A DEFAULT. A default here is layered UNDER the stored entries, and on this platform the
+# bootstrap stores all of them, so a default would be invisible. Nothing observable changes when this
+# file lands (docs guide configuration-yml.md, section 7.5, step one). Peer addresses are plain
+# `string`s, not `serviceAddress`: a serviceAddress is rendered by the platform and ignores the
+# stored value, so declaring one would change what the container gets.
+#
+# THE `qits` CLIENT'S FALLBACK KEYS STAY UNTIL THE CUTOVER. The one named oidc client `qits` reads
+# QITS_RESOURCE_IDP_* first and falls back to the OLD `artifacts` client's env names
+# (QUARKUS_OIDC_CLIENT_ARTIFACTS_*, see orchestrator/.../META-INF/microprofile-config.properties).
+# Those four are declared below because live runs still mint through them. After this service
+# declares `resources: idp:client` and that release is live, they are inert and a later change
+# removes them from this file.
+#
+# DELIBERATELY NOT HERE:
+#   * The other old named clients (CONTAINERS, CI, DEPLOYMENTS, PROJECTS, WORKSPACES) and the
+#     fallback client's own QUARKUS_OIDC_CLIENT_ARTIFACTS_GRANT_OPTIONS_CLIENT_AUDIENCE. Nothing
+#     injects those clients any more, and the `qits` client's audience is the constant qits-platform.
+#     Each old block ships its own url and id and cannot fetch at boot, so deleting these entries
+#     is safe in any order.
+#   * QITS_RESOURCE_*. The deployer injects those from its own resource registry, the single
+#     authority for a provisioned credential. qits-configuration must not state or delete one.
+
+keys:
+  # --- the inbound guard ----------------------------------------------------------------------
+
+  env.QITS_AUTH_MACHINE_REQUIRED:
+    type: boolean
+    description: "The machine gate. On, a bearer is validated against the idp; off, there is no OIDC tenant at all."
+
+  env.QITS_AUTH_MACHINE_AUDIENCE:
+    type: string
+    description: "This service's own audience, which an inbound machine token must carry (qits-platform is accepted beside it)."
+
+  env.QUARKUS_OIDC_AUTH_SERVER_URL:
+    type: string
+    description: "The issuer whose JWKS validates inbound tokens."
+
+  # --- the outbound credential: the one named client `qits` -----------------------------------
+
+  env.QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED:
+    type: boolean
+    description: "Fallback switch for the `qits` client until the idp:client cutover. Off, peer calls carry the forward-auth pair alone."
+
+  env.QUARKUS_OIDC_CLIENT_ARTIFACTS_AUTH_SERVER_URL:
+    type: string
+    description: "Fallback idp url the `qits` client mints its token at, until the idp:client cutover."
+
+  env.QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ID:
+    type: string
+    description: "Fallback client id the `qits` client presents, until the idp:client cutover. This service's own id."
+
+  env.QUARKUS_OIDC_CLIENT_ARTIFACTS_CREDENTIALS_SECRET:
+    type: string
+    description: "Fallback client secret for the `qits` client, until the idp:client cutover. A secret: never give it a default."
+
+  env.QUARKUS_OIDC_CLIENT_QITS_CLIENT_ENABLED:
+    type: boolean
+    description: "The `qits` client's own switch, as the README documents it. Set, it wins over the fallback switch."
+
+  env.QUARKUS_OIDC_CLIENT_QITS_CREDENTIALS_SECRET:
+    type: string
+    description: "The `qits` client's own secret, as the README documents it. A secret: never give it a default."
+
+  # --- the eight peers a run calls --------------------------------------------------------------
+
+  env.QITS_ORCHESTRATOR_TARGETS_ARTIFACTS_URL:
+    type: string
+    description: "Where qits-artifacts is: registry and blob gc. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_CONTAINERS_URL:
+    type: string
+    description: "Where qits-containers is: host image, volume and build cache pruning. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_CI_URL:
+    type: string
+    description: "Where qits-ci is: the image pins its pipelines hold. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_DEPLOYMENTS_URL:
+    type: string
+    description: "Where qits-deployments is: the deployment pins. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_PROJECTS_URL:
+    type: string
+    description: "Where qits-projects is. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_WORKSPACES_URL:
+    type: string
+    description: "Where qits-workspaces is: the merged-branch sweep. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_MAINTENANCE_URL:
+    type: string
+    description: "Where qits-platform-maintenance is: the dependency pins. Scheme, host and port, no path."
+
+  env.QITS_ORCHESTRATOR_TARGETS_CONFIGURATION_URL:
+    type: string
+    description: "Where qits-configuration is: the configured image pins. Scheme, host and port, no path."
+
+  # --- the gc policy ----------------------------------------------------------------------------
+
+  env.QITS_ORCHESTRATOR_GC_ENABLED:
+    type: boolean
+    description: "Whether the clock may start a gc run."
+
+  env.QITS_ORCHESTRATOR_GC_CRON:
+    type: string
+    description: "When the clock starts a gc run. A Quartz cron expression."
+
+  env.QITS_ORCHESTRATOR_GC_TIME_ZONE:
+    type: string
+    description: "The zone the gc cron is read in."
+
+  env.QITS_ORCHESTRATOR_GC_DRY_RUN:
+    type: boolean
+    description: "Whether the scheduled run only reports and deletes nothing."
+
+  env.QITS_ORCHESTRATOR_GC_DEPLOY_TRIGGER_ENABLED:
+    type: boolean
+    description: "Whether a deployment going live starts a gc run."
+
+  env.QITS_ORCHESTRATOR_GC_DEPLOY_TRIGGER_QUIET_PERIOD:
+    type: string
+    description: "How long after the last deployment of a wave that run fires. An ISO-8601 duration, such as PT10M."
+
+  env.QITS_ORCHESTRATOR_GC_IMAGE_KEEP_PREFIXES:
+    type: string
+    description: "Comma-separated image tag prefixes no rule may condemn."
+
+  env.QITS_ORCHESTRATOR_GC_BRANCH_KEEP_PREFIXES:
+    type: string
+    description: "Comma-separated branch prefixes the merged-branch sweep may never condemn."
+
+  env.QITS_ORCHESTRATOR_GC_IMAGE_MIN_AGE:
+    type: string
+    description: "How old an image must be before a rule may condemn it. An ISO-8601 duration."
+
+  env.QITS_ORCHESTRATOR_GC_VOLUME_MIN_AGE:
+    type: string
+    description: "How old a dangling volume must be before it is removed. An ISO-8601 duration."
+
+  env.QITS_ORCHESTRATOR_GC_BUILD_CACHE_KEEP_BYTES:
+    type: number
+    description: "What the host buildkit cache may keep after a prune. Bytes."
+
+  env.QITS_ORCHESTRATOR_GC_BUILDER_CACHE_KEEP_BYTES:
+    type: number
+    description: "What a buildx_buildkit builder container may keep after a prune. Bytes."
+
+  env.QITS_ORCHESTRATOR_GC_CALL_TIMEOUT:
+    type: string
+    description: "How long one peer call may take. An ISO-8601 duration."
+
+  # --- telemetry --------------------------------------------------------------------------------
+
+  env.QITS_OBSERVABILITY_URL:
+    type: string
+    description: "Where this service's OTLP telemetry goes. Scheme, host and port, no path."
+
+  # --- the event bus (qits-eventstream's own env, shipped as an ordinal-100 default) ------------
+
+  env.QITS_EVENTS_URL:
+    type: string
+    description: "The event bus this service's outbox publishes through. Not set by the deployer today; the jar ships its own default."
