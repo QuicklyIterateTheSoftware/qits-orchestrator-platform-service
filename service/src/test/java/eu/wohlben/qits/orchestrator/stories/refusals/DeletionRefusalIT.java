@@ -82,9 +82,11 @@ public class DeletionRefusalIT {
       the platform's identity tracks.
 
       A request carrying nothing at all satisfies neither mechanism and is refused before any of it
-      begins. A bearer minted for another service's audience is refused the same way, however
-      well-formed it looks — both are 401 and not 403, because the credential never became an
-      identity and there is no caller to have been forbidden.
+      begins. A bearer minted outside this platform is refused the same way, however well-formed it
+      looks — both are 401 and not 403, because the credential never became an identity and there is
+      no caller to have been forbidden. A sibling service's bearer is not that case: every token
+      qits-platform-idp mints carries the one platform audience, so a peer is admitted here and its
+      roles decide what it may do.
 
       A caller holding a role this service has never heard of gets the other answer. qits:reader is
       a real platform role and it is not one of the two these routes name; presented as a session's
@@ -111,9 +113,9 @@ public class DeletionRefusalIT {
         .as("anonymous-refused");
 
     NetworkCapture.actor(StoryIdentities.IMPOSTOR);
-    String foreign = StoryIdentities.foreignAudienceToken("story-impostor");
-    MINTED.add(foreign);
-    StoryIdentities.bearer(given(), foreign)
+    String offPlatform = StoryIdentities.offPlatformToken("story-impostor");
+    MINTED.add(offPlatform);
+    StoryIdentities.bearer(given(), offPlatform)
         .contentType(ContentType.JSON)
         .body(StoryTarget.startBody(false))
         .when()
@@ -122,8 +124,8 @@ public class DeletionRefusalIT {
         .statusCode(401);
     story
         .note(
-            "a bearer minted for qits-containers' audience — a service this run would have called —"
-                + " is refused here just the same: a token is cut FOR one service")
+            "a bearer addressed to an audience this platform never mints is refused just the same:"
+                + " the audience says a token belongs to this platform, and nothing else does")
         .as("wrong-audience-refused");
 
     // One actor and two credentials, which the diagram draws as ONE arrow: same initiator, same

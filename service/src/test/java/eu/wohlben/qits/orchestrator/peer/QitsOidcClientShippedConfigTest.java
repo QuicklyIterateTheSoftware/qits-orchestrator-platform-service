@@ -38,8 +38,7 @@ class QitsOidcClientShippedConfigTest {
         ConfigProvider.getConfig()
             .getOptionalValue("quarkus.oidc-client.qits.credentials.secret", String.class);
     assertTrue(secret.isEmpty());
-    // One audience for every peer now, never one of the eight peer-specific ones the old clients
-    // carried.
+    // One audience for every peer: the platform's, which is the only one the idp mints.
     assertEquals("qits-platform", value("quarkus.oidc-client.qits.grant-options.client.audience"));
   }
 
@@ -52,12 +51,23 @@ class QitsOidcClientShippedConfigTest {
   }
 
   @Test
-  void theEightOldClientsStayShippedDisabled() {
-    // Nothing injects any of these any more (PeerTokens moved to `qits`); they stay only so a
-    // deployment's leftover QUARKUS_OIDC_CLIENT_<PEER>_CLIENT_ENABLED=true cannot make one of them
-    // fetch a token nobody asks for at boot.
-    String[] oldClients = {
-      PeerTarget.ARTIFACTS,
+  void theArtifactsBlockIsTheOnlyOtherNamedClientAndItIsDisabled() {
+    // Nothing injects it (PeerTokens mints through `qits` for every peer). It ships because a live
+    // deployment holds this service's credential under the QUARKUS_OIDC_CLIENT_ARTIFACTS_* names the
+    // `qits` client falls back to, and a block can be overridden by the environment only where it
+    // exists: this one is what turns a leftover _CLIENT_ENABLED=true into an INERT client rather
+    // than one that discovers and fetches a token at boot.
+    assertEquals("false", value("quarkus.oidc-client.artifacts.client-enabled"));
+    assertEquals("false", value("quarkus.oidc-client.artifacts.discovery-enabled"));
+    assertEquals("false", value("quarkus.oidc-client.artifacts.early-tokens-acquisition"));
+
+    // And there is no block per receiver any more: one audience serves all eight calls, so a client
+    // per peer would be seven nothing mints through. What says a block is gone is that the key
+    // answers the extension's own default — `client-enabled` is `true` and `discovery-enabled` has
+    // no value at all for ANY name, invented ones included, because these are a config MAPPING's
+    // defaults rather than a client somebody declared. A shipped `false` here would mean a block is
+    // back.
+    String[] gone = {
       PeerTarget.CONTAINERS,
       PeerTarget.CI,
       PeerTarget.DEPLOYMENTS,
@@ -66,11 +76,16 @@ class QitsOidcClientShippedConfigTest {
       PeerTarget.MAINTENANCE,
       PeerTarget.CONFIGURATION
     };
-    for (String peer : oldClients) {
+    for (String peer : gone) {
       assertEquals(
-          "false",
+          "true",
           value("quarkus.oidc-client." + peer + ".client-enabled"),
-          "the old " + peer + " client must stay disabled");
+          "there must be no shipped " + peer + " oidc client block left");
+      assertTrue(
+          ConfigProvider.getConfig()
+              .getOptionalValue("quarkus.oidc-client." + peer + ".discovery-enabled", String.class)
+              .isEmpty(),
+          "there must be no shipped " + peer + " oidc client block left");
     }
   }
 }

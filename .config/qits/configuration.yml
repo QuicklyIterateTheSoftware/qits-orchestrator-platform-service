@@ -27,12 +27,13 @@
 # declares `resources: idp:client` and that release is live, they are inert and a later change
 # removes them from this file.
 #
-# DELIBERATELY NOT HERE:
-#   * The other old named clients (CONTAINERS, CI, DEPLOYMENTS, PROJECTS, WORKSPACES) and the
-#     fallback client's own QUARKUS_OIDC_CLIENT_ARTIFACTS_GRANT_OPTIONS_CLIENT_AUDIENCE. Nothing
-#     injects those clients any more, and the `qits` client's audience is the constant qits-platform.
-#     Each old block ships its own url and id and cannot fetch at boot, so deleting these entries
-#     is safe in any order.
+# DELIBERATELY NOT HERE, AND A PERSON MAY DELETE THESE STORED ENTRIES:
+#   * Every QUARKUS_OIDC_CLIENT_CONTAINERS_*, _CI_*, _DEPLOYMENTS_*, _PROJECTS_* and _WORKSPACES_*
+#     entry. Those clients do not exist in this image at all — one client, `qits`, mints for every
+#     peer — so the whole family is keys nothing reads.
+#   * QUARKUS_OIDC_CLIENT_ARTIFACTS_GRANT_OPTIONS_CLIENT_AUDIENCE. The `qits` client's audience is
+#     the constant qits-platform and nothing reads a configured one. Its four siblings above are
+#     still read and stay.
 #   * QITS_RESOURCE_*. The deployer injects those from its own resource registry, the single
 #     authority for a provisioned credential. qits-configuration must not state or delete one.
 
@@ -45,7 +46,7 @@ keys:
 
   env.QITS_AUTH_MACHINE_AUDIENCE:
     type: string
-    description: "This service's own audience, which an inbound machine token must carry (qits-platform is accepted beside it)."
+    description: "qits-auth-core's gate contract: with the gate on its startup check demands this key. The image ships the platform audience, qits-platform, which is the only audience the idp mints — a value naming anything else is read by nothing and refuses nothing."
 
   env.QUARKUS_OIDC_AUTH_SERVER_URL:
     type: string

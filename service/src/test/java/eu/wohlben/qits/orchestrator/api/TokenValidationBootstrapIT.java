@@ -189,7 +189,7 @@ public class TokenValidationBootstrapIT {
         .body(GC + ".name", equalTo("Garbage collection"))
         .body(GC + ".description", notNullValue());
     story
-        .note("a platform peer's bearer (aud=qits-platform-orchestrator, groups=[qits:system]) is"
+        .note("a platform peer's bearer (aud=qits-platform, groups=[qits:system]) is"
             + " accepted and the catalogue is served")
         .as("catalogue-served");
 
@@ -238,10 +238,10 @@ public class TokenValidationBootstrapIT {
       The flip side of trusting the platform's keys. A request with no credential at all is
       refused, because there is no anonymous route in this service and there must never be one:
       what the surface behind it starts is a deletion run on four other services' stores. A
-      token signed by a key the published JWKS never carried, or minted for another service's
-      audience, is refused the same way — however well-formed it looks: both are 401 and not
-      403, because the credential never became an identity and there is no caller to have been
-      forbidden. A token addressed here and signed correctly but carrying a role this service has
+      token signed by a key the published JWKS never carried, or addressed to an audience this
+      platform never mints, is refused the same way — however well-formed it looks: both are 401
+      and not 403, because the credential never became an identity and there is no caller to have
+      been forbidden. A token addressed here and signed correctly but carrying a role this service has
       never heard of gets the other answer, 403 — it authenticated and covers nothing.
       """)
   @Order(2)
@@ -283,7 +283,7 @@ public class TokenValidationBootstrapIT {
 
     String wrongAudienceToken =
         idp.token()
-            .audience("some-other-service")
+            .audience(StoryIdentities.OFF_PLATFORM_AUDIENCE)
             .groups(StoryIdentities.MACHINE_ROLE)
             .mint();
     given()
@@ -292,7 +292,7 @@ public class TokenValidationBootstrapIT {
         .then()
         .statusCode(401);
     story
-        .note("a token minted for another service's audience is refused just the same")
+        .note("a token addressed to an audience this platform never mints is refused just the same")
         .as("wrong-audience-refused");
 
     // The last door, and the one that proves the groups→roles mapping really ran rather than being

@@ -39,19 +39,22 @@ import io.restassured.specification.RequestSpecification;
 public final class StoryIdentities {
 
   /**
-   * The audience this service enforces, and it is a LITERAL rather than a variable name. {@code
-   * qits.auth.machine.audience=qits-platform-orchestrator} is spelled out in {@code
-   * application.properties} and {@code quarkus.oidc.token.audience} references it, so the audience
-   * under test is the shipped one and there is no expression to feed. A deployment still overrides
-   * it by environment.
+   * The audience this service enforces, and it is the PLATFORM's rather than a name of its own:
+   * qits-platform-idp puts {@code qits-platform} on every token it mints, so every caller on this
+   * platform addresses this service by it and the roles decide the rest. {@code
+   * quarkus.oidc.token.audience=qits-platform} is spelled as a literal in {@code
+   * application.properties} and so is this, so the audience under test is the shipped one.
    */
-  public static final String AUDIENCE = "qits-platform-orchestrator";
+  public static final String AUDIENCE = "qits-platform";
 
   /** The machine role: a bearer's, and one of the two every route names. */
   public static final String MACHINE_ROLE = "qits:system";
 
   /** The person's role: a forwarded header's, and the other of the two. */
   public static final String HUMAN_ROLE = "qits:admin";
+
+  /** An audience no token of this platform carries — the credential that never becomes an identity. */
+  public static final String OFF_PLATFORM_AUDIENCE = "some-other-platform";
 
   /** A real platform role this service names nowhere — the 403 that is not a 401. */
   public static final String UNPRIVILEGED_ROLE = "qits:reader";
@@ -73,7 +76,7 @@ public final class StoryIdentities {
   /** Nobody at all: no bearer, no forwarded pair. */
   public static final String ANONYMOUS = "an unauthenticated caller";
 
-  /** A credential that looks right and is not: another service's audience. */
+  /** A credential that looks right and is not: an audience from outside this platform. */
   public static final String IMPOSTOR = "an impostor";
 
   /** A real caller, correctly authenticated, holding a role this service never names. */
@@ -96,9 +99,13 @@ public final class StoryIdentities {
     return token(subject, AUDIENCE, MACHINE_ROLE);
   }
 
-  /** A token minted for a real sibling's audience — the confusion that could happen on qits-net. */
-  public static String foreignAudienceToken(String subject) {
-    return token(subject, StoryPeers.CONTAINERS, MACHINE_ROLE);
+  /**
+   * A token addressed somewhere that is not this platform. It has to be minted OUTSIDE the platform
+   * audience to be a refusal at all: a sibling's bearer carries {@code qits-platform} like every
+   * other token qits-platform-idp mints, so it is admitted here and its roles decide what it may do.
+   */
+  public static String offPlatformToken(String subject) {
+    return token(subject, OFF_PLATFORM_AUDIENCE, MACHINE_ROLE);
   }
 
   /** Addressed here, signed correctly, carrying a role no route names: authenticated, and covered by nothing. */

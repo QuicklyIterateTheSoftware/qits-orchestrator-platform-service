@@ -125,15 +125,17 @@ process whose steps had to catch would put half its outcomes on a path nobody re
 that matters belongs to the call: an anonymous call to a guarded peer comes back 401 and the step
 records the url and the status, which is more useful than a mint failure one layer earlier.
 
-**One named client, `qits`, for all eight peers** (service-client-identity-plan.md, C4). It used to
-be eight — one per peer, because a token was cut FOR one service and qits-artifacts refused a bearer
-addressed to qits-containers. The plan's open calling model removed that refusal: every peer now
-accepts a bearer addressed to `qits-platform`, so one client and one audience serve all eight calls.
-Two peers this service could never reach with a bearer before — qits-platform-maintenance and
-qits-configuration — get one for the first time, because a live deployment only ever turned on six
-of the old eight clients (`ComposeTemplate.java`); the `qits` client is turned on or off as a whole.
-The unnamed default client is disabled and stays disabled — the extension creates it whether or not
-anything injects it.
+**One named client, `qits`, for all eight peers** (service-client-identity-plan.md, C4). A token is
+cut for the PLATFORM and not for one receiver: qits-platform-idp puts `qits-platform` on every token
+it mints and every peer accepts it, so one client and one audience serve all eight calls and the
+roles decide what this service may do at each. The client is turned on or off as a whole, so
+qits-platform-maintenance and qits-configuration are reached with a bearer like the other six. Two
+blocks beside it are injected by nothing and both are deliberate: the unnamed default client, which
+the extension creates whether or not anything injects it and which is disabled so a client with no
+auth-server-url cannot fail the boot, and `artifacts`, whose env names the `qits` client's fallbacks
+read and whose shipped `discovery-enabled=false` / `early-tokens-acquisition=false` keep a
+deployment's `QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED=true` inert. `artifacts` goes once this
+repository declares `resources: idp:client` (C5) and those extras are off every deployment.
 
 **A response is bounded at 1 MiB** with a marker appended, cut on a character boundary. An artifacts
 plan lists every condemned identity on the platform; the store here is a log a person reads, and an
@@ -230,6 +232,14 @@ stores. `stories.refusals` is where each door is shown being shut rather than de
 `quarkus.oidc.tenant-enabled=${qits.auth.machine.required:false}` — validation follows the rollout
 gate rather than standing on its own, so with the gate off there is no OIDC tenant, nothing fetches
 a JWKS, and a clone-alone build needs no issuer. There is no third state.
+
+**`quarkus.oidc.token.audience` is the literal `qits-platform` and there is only that one audience.**
+qits-platform-idp puts it on every token it mints, whatever the client asked for, so a peer's bearer
+and a person's `qits` CLI token both address this service by it and the roles decide the rest. It is
+NOT spelled from `qits.auth.machine.audience`: that key is qits-auth-core's gate contract, which the
+library's startup check reads, and a tenant following an environment override of it would refuse
+every token the platform actually mints. A refusal story therefore mints an audience from outside
+the platform — a sibling's bearer is admitted here.
 
 ## Tests
 

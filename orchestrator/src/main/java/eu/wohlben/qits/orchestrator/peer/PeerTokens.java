@@ -11,14 +11,14 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 /**
- * The one named oidc client, {@code qits} (service-client-identity-plan.md, C4), replacing the
- * eight peer-specific clients this class used to hold.
+ * The one named oidc client, {@code qits} (service-client-identity-plan.md, C4), which mints the
+ * bearer every one of the eight peer calls carries.
  *
- * <p><b>One audience for every call now, {@code qits-platform}</b> — the plan's open calling
- * model: a service calling a service may do basically everything, so one token minted for one
- * audience is good for all eight peers. The old shape cut a token FOR one peer at a time because
- * qits-artifacts refused a bearer addressed to qits-containers; that refusal is gone now that every
- * receiver accepts {@code qits-platform}.
+ * <p><b>One audience for every call, {@code qits-platform}</b> — the plan's open calling model: a
+ * token is cut for the PLATFORM rather than for one receiver, so one token is good for all eight
+ * peers and what this service may do at a peer is decided by its roles. qits-platform-idp puts that
+ * audience on every token it mints and every receiver's own {@code quarkus.oidc.token.audience}
+ * names it.
  *
  * <p><b>The switch is the extension's own</b>, {@code quarkus.oidc-client.qits.client-enabled},
  * false in the shipped properties. There is no key of ours beside it — one switch cannot disagree
