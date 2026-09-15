@@ -51,7 +51,7 @@ class QitsOidcClientShippedConfigTest {
   }
 
   @Test
-  void theArtifactsBlockIsTheOnlyOtherNamedClientAndItIsDisabled() {
+  void theArtifactsBlockIsInert() {
     // Nothing injects it (PeerTokens mints through `qits` for every peer). It ships because a live
     // deployment holds this service's credential under the QUARKUS_OIDC_CLIENT_ARTIFACTS_* names the
     // `qits` client falls back to, and a block can be overridden by the environment only where it
@@ -60,32 +60,65 @@ class QitsOidcClientShippedConfigTest {
     assertEquals("false", value("quarkus.oidc-client.artifacts.client-enabled"));
     assertEquals("false", value("quarkus.oidc-client.artifacts.discovery-enabled"));
     assertEquals("false", value("quarkus.oidc-client.artifacts.early-tokens-acquisition"));
+  }
 
-    // And there is no block per receiver any more: one audience serves all eight calls, so a client
-    // per peer would be seven nothing mints through. What says a block is gone is that the key
-    // answers the extension's own default — `client-enabled` is `true` and `discovery-enabled` has
-    // no value at all for ANY name, invented ones included, because these are a config MAPPING's
-    // defaults rather than a client somebody declared. A shipped `false` here would mean a block is
-    // back.
-    String[] gone = {
-      PeerTarget.CONTAINERS,
+  @Test
+  void theFiveNamesTheDeploymentStillSetsAreNeutralised() {
+    // No code mints through these — `qits` mints for every peer — but the deployed configuration
+    // still carries a QUARKUS_OIDC_CLIENT_<NAME>_* family for each, _CLIENT_ENABLED=true included,
+    // and ONE variable of a family is enough to mint `quarkus.oidc-client.<name>` as a map key in
+    // the environment source. With no block behind it the name answers the extension's defaults,
+    // and both are ON: an enabled, discovering client is built during runtime init and blocks on
+    // metadata discovery for `connection-timeout` per client, before the listener accepts, so an
+    // issuer that accepts and does not answer fails this service's boot.
+    //
+    // All three keys are load-bearing, and that is what this pins. `client-enabled=false` is
+    // overridden by the deployment's own _CLIENT_ENABLED=true (the environment outranks this file),
+    // so `discovery-enabled=false` — the key no deployment sets — is what actually keeps an enabled
+    // client off the network, and `token-path` is what stops discovery-off from throwing a
+    // ConfigurationException for want of a token endpoint. Drop any one of the three and the boot
+    // hazard is back.
+    String[] neutralised = {
       PeerTarget.CI,
+      PeerTarget.CONTAINERS,
       PeerTarget.DEPLOYMENTS,
       PeerTarget.PROJECTS,
-      PeerTarget.WORKSPACES,
-      PeerTarget.MAINTENANCE,
-      PeerTarget.CONFIGURATION
+      PeerTarget.WORKSPACES
     };
-    for (String peer : gone) {
+    for (String peer : neutralised) {
+      assertEquals(
+          "false",
+          value("quarkus.oidc-client." + peer + ".client-enabled"),
+          peer + " must ship client-enabled=false");
+      assertEquals(
+          "false",
+          value("quarkus.oidc-client." + peer + ".discovery-enabled"),
+          peer + " must ship discovery-enabled=false — the key the deployment cannot override");
+      assertEquals(
+          "token",
+          value("quarkus.oidc-client." + peer + ".token-path"),
+          peer + " must ship a token-path, or discovery-enabled=false fails the boot");
+    }
+  }
+
+  @Test
+  void thereIsNoBlockForTheTwoNamesNoDeploymentSets() {
+    // qits-platform-maintenance and qits-configuration have no QUARKUS_OIDC_CLIENT_MAINTENANCE_* or
+    // _CONFIGURATION_* entry anywhere, so no map key is minted for either name and there is nothing
+    // to neutralise. What says a block is absent is that the keys answer the extension's own
+    // defaults — `client-enabled` is `true` and `discovery-enabled` has no value at all for ANY
+    // name, invented ones included, because these are a config MAPPING's defaults rather than a
+    // client somebody declared. A shipped `false` here would mean a block came back.
+    for (String peer : new String[] {PeerTarget.MAINTENANCE, PeerTarget.CONFIGURATION}) {
       assertEquals(
           "true",
           value("quarkus.oidc-client." + peer + ".client-enabled"),
-          "there must be no shipped " + peer + " oidc client block left");
+          "there must be no shipped " + peer + " oidc client block");
       assertTrue(
           ConfigProvider.getConfig()
               .getOptionalValue("quarkus.oidc-client." + peer + ".discovery-enabled", String.class)
               .isEmpty(),
-          "there must be no shipped " + peer + " oidc client block left");
+          "there must be no shipped " + peer + " oidc client block");
     }
   }
 }

@@ -129,13 +129,25 @@ records the url and the status, which is more useful than a mint failure one lay
 cut for the PLATFORM and not for one receiver: qits-platform-idp puts `qits-platform` on every token
 it mints and every peer accepts it, so one client and one audience serve all eight calls and the
 roles decide what this service may do at each. The client is turned on or off as a whole, so
-qits-platform-maintenance and qits-configuration are reached with a bearer like the other six. Two
-blocks beside it are injected by nothing and both are deliberate: the unnamed default client, which
-the extension creates whether or not anything injects it and which is disabled so a client with no
-auth-server-url cannot fail the boot, and `artifacts`, whose env names the `qits` client's fallbacks
-read and whose shipped `discovery-enabled=false` / `early-tokens-acquisition=false` keep a
-deployment's `QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED=true` inert. `artifacts` goes once this
-repository declares `resources: idp:client` (C5) and those extras are off every deployment.
+qits-platform-maintenance and qits-configuration are reached with a bearer like the other six.
+
+**Every other client block is injected by nothing, and each is deliberate.** The unnamed default
+client, which the extension creates whether or not anything injects it and which is disabled so a
+client with no auth-server-url cannot fail the boot. `artifacts`, whose env names the `qits`
+client's fallbacks read and whose shipped `discovery-enabled=false` /
+`early-tokens-acquisition=false` keep a deployment's
+`QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED=true` inert; it goes once this repository declares
+`resources: idp:client` (C5) and those extras are off every deployment. And `ci`, `containers`,
+`deployments`, `projects`, `workspaces`, which exist only because the deployment still sets a
+`QUARKUS_OIDC_CLIENT_<NAME>_*` family for each. **A client block is not gone just because this
+repository deleted it.** SmallRye discovers `quarkus.oidc-client.<name>` map keys from the
+ENVIRONMENT, so one variable of a family mints the name, and a name with no block behind it takes
+the extension's defaults — `client-enabled` true and `discovery-enabled` true. Such a client is
+built during runtime init, before the listener accepts, and blocks on metadata discovery for
+`connection-timeout` per client: an issuer that accepts and does not answer fails this service's
+boot. `client-enabled=false` cannot fix that alone (the environment's `true` outranks this file);
+`discovery-enabled=false` plus a `token-path` is what does, and those lines go only after the
+matching entries are deleted from the deployment.
 
 **A response is bounded at 1 MiB** with a marker appended, cut on a character boundary. An artifacts
 plan lists every condemned identity on the platform; the store here is a log a person reads, and an

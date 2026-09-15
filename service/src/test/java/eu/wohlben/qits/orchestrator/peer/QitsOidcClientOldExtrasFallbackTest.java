@@ -36,7 +36,8 @@ class QitsOidcClientOldExtrasFallbackTest {
       return Map.of(
           "QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ID", "old-extras-qits-platform-orchestrator",
           "QUARKUS_OIDC_CLIENT_ARTIFACTS_CREDENTIALS_SECRET", "old-extras-secret",
-          "QUARKUS_OIDC_CLIENT_ARTIFACTS_AUTH_SERVER_URL", "http://old-extras-idp:8080/idp");
+          "QUARKUS_OIDC_CLIENT_ARTIFACTS_AUTH_SERVER_URL", "http://old-extras-idp:8080/idp",
+          "QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED", "true");
     }
   }
 
@@ -52,5 +53,26 @@ class QitsOidcClientOldExtrasFallbackTest {
     assertEquals("old-extras-secret", value("quarkus.oidc-client.qits.credentials.secret"));
     assertEquals(
         "http://old-extras-idp:8080/idp", value("quarkus.oidc-client.qits.auth-server-url"));
+  }
+
+  @Test
+  void theRawEnvNameAndTheDottedKeyAreTwoDifferentLookups() {
+    // Why the `qits` client's keys name QUARKUS_OIDC_CLIENT_ARTIFACTS_* inside `${…}` and never the
+    // dotted `quarkus.oidc-client.artifacts.*`: the two spellings are separate properties, resolved
+    // from separate sources. The raw name answers what the environment set; the dotted key answers
+    // the `artifacts` block this file ships. Now that five more names ship a `client-enabled=false`
+    // of their own, this is the assertion that says none of those shipped `false` values can ever
+    // be what a `${QUARKUS_OIDC_CLIENT_…_CLIENT_ENABLED}` expression reads.
+    assertEquals("true", value("QUARKUS_OIDC_CLIENT_ARTIFACTS_CLIENT_ENABLED"));
+    assertEquals("false", value("quarkus.oidc-client.artifacts.client-enabled"));
+  }
+
+  @Test
+  void theQitsClientStaysOffUnderTestWhateverTheEnvironmentSays() {
+    // The expression on quarkus.oidc-client.qits.client-enabled reads the raw name above, so this
+    // profile is the arm that would switch the client ON in a deployment. Under test it stays off:
+    // %test.quarkus.oidc-client.qits.client-enabled=false is a profiled key in the same file and
+    // wins over the unprofiled expression, so no suite here ever dials a real idp.
+    assertEquals("false", value("quarkus.oidc-client.qits.client-enabled"));
   }
 }

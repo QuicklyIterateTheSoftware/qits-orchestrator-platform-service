@@ -29,8 +29,15 @@
 #
 # DELIBERATELY NOT HERE, AND A PERSON MAY DELETE THESE STORED ENTRIES:
 #   * Every QUARKUS_OIDC_CLIENT_CONTAINERS_*, _CI_*, _DEPLOYMENTS_*, _PROJECTS_* and _WORKSPACES_*
-#     entry. Those clients do not exist in this image at all — one client, `qits`, mints for every
-#     peer — so the whole family is keys nothing reads.
+#     entry. No code mints through those names — one client, `qits`, mints for every peer. They are
+#     not inert while they are stored, though: quarkus-oidc-client discovers
+#     `quarkus.oidc-client.<name>` map keys FROM THE ENVIRONMENT, so one variable of a family is
+#     enough to make the name a client at runtime, and `client-enabled` / `discovery-enabled` both
+#     default to true. The image therefore ships `client-enabled=false`, `discovery-enabled=false`
+#     and `token-path` for each of those five names to keep them off the network at boot
+#     (orchestrator/.../META-INF/microprofile-config.properties). DELETING THESE ENTRIES IS THE
+#     PREREQUISITE FOR REMOVING THOSE LINES, in that order and a later change: the lines cannot go
+#     while a deployment still sets _CLIENT_ENABLED=true for the name.
 #   * QUARKUS_OIDC_CLIENT_ARTIFACTS_GRANT_OPTIONS_CLIENT_AUDIENCE. The `qits` client's audience is
 #     the constant qits-platform and nothing reads a configured one. Its four siblings above are
 #     still read and stay.
