@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.wohlben.qits</groupId>
         <artifactId>qits-platform-orchestrator</artifactId>
-        <version>2026.916.210225</version>
+        <version>2026.917.110144</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
