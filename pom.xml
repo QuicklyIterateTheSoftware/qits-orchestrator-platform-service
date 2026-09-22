@@ -82,7 +82,7 @@
              OBSERVED rather than narrated. This version ships NetworkTaps.restAssured, which
              replaced the StoryNetworkFilter this repo had hand-copied. Published by qits-userflows
              into the same platform Maven repository as the three above. -->
-        <qits.userflows.version>2026.920.210236</qits.userflows.version>
+        <qits.userflows.version>2026.922.190204</qits.userflows.version>
         <!-- The recording service mocks those ITs boot against (the generic MockService plus
              idp.MockIdp), published by qits-integrations-quarkus beside qits-auth-core,
              qits-arch-rules and qits-db-core. -->
