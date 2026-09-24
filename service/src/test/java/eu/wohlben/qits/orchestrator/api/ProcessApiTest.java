@@ -218,7 +218,7 @@ class ProcessApiTest {
         .body("steps[0].request.method", equalTo("GET"))
         .body(
             "steps[0].request.url",
-            equalTo("http://qits-containers:8080/containers/api/gc/usage"))
+            equalTo("http://dev-qits-containers:8080/containers/api/gc/usage"))
         .body("steps[0].request.body", nullValue())
         // `response` is the peer's JSON as TEXT, stored as it arrived. A client parses it.
         .body("steps[0].response", containsString("\"sizeBytes\""))
@@ -254,7 +254,7 @@ class ProcessApiTest {
         .body("steps[15].status", equalTo("SUCCEEDED"))
         .body(
             "steps[15].request.url",
-            equalTo("http://qits-artifacts:8080/artifacts/api/store/summary"));
+            equalTo("http://dev-qits-artifacts:8080/artifacts/api/store/summary"));
   }
 
   @Test
