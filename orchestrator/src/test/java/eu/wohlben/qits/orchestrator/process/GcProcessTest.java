@@ -316,9 +316,11 @@ class GcProcessTest {
     assertEquals(
         "removed 1 of 9 branches across 2 repositories", steps.get("branches.sweep").summary);
 
-    // The url is the shipped target plus the shipped path — a wrong peer would fail here.
+    // The url is the shipped target plus the shipped path — a wrong peer would fail here. The host
+    // is the derived dev-qits-<alias> form (no QITS_ENVIRONMENT in this suite, so the `dev`
+    // fallback), never the bare alias.
     assertEquals(
-        "http://qits-platform-deployments:8080/platform-deployments/api/pins",
+        "http://dev-qits-deployments:8080/platform-deployments/api/pins",
         steps.get("pins.deployments").requestUrl);
     assertEquals("GET", steps.get("pins.deployments").requestMethod);
     // Every pin read addressed at its own shipped target — a step pointed at the wrong one would
@@ -326,16 +328,17 @@ class GcProcessTest {
     // service was actually asked. That matters most for the two effective reads: they ride peers
     // this process already drives, so a path typo is the only thing that could send them astray.
     assertEquals(
-        "http://qits-platform-maintenance:8080/maintenance/api/pins",
+        "http://dev-qits-platform-maintenance:8080/maintenance/api/pins",
         steps.get("pins.dependencies").requestUrl);
     assertEquals(
-        "http://qits-configuration:8080/configuration/api/pins", steps.get("pins.images").requestUrl);
+        "http://dev-qits-configuration:8080/configuration/api/pins",
+        steps.get("pins.images").requestUrl);
     assertEquals(
-        "http://qits-workspaces:8080/workspaces/api/pins", steps.get("pins.workspaces").requestUrl);
+        "http://dev-qits-workspaces:8080/workspaces/api/pins", steps.get("pins.workspaces").requestUrl);
     assertEquals(
-        "http://qits-projects:8080/projects/api/pins", steps.get("pins.projects").requestUrl);
+        "http://dev-qits-projects:8080/projects/api/pins", steps.get("pins.projects").requestUrl);
     assertEquals(
-        "http://qits-artifacts:8080/artifacts/api/store/summary",
+        "http://dev-qits-artifacts:8080/artifacts/api/store/summary",
         steps.get("artifacts.usage.before").requestUrl);
     assertEquals(200, steps.get("usage.after").httpStatus);
     // The answer is stored whole, which is what an investigation reads.

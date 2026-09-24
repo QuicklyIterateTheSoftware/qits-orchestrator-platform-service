@@ -29,8 +29,12 @@ class QitsOidcClientShippedConfigTest {
   }
 
   @Test
-  void theQitsClientResolvesItsOwnLiteralDefaults() {
-    assertEquals("http://qits-platform-idp:8080/idp", value("quarkus.oidc-client.qits.auth-server-url"));
+  void theQitsClientResolvesItsOwnDefaults() {
+    // The host is derived off QITS_ENVIRONMENT, which no test sets, so the `dev` fallback applies —
+    // qits-platform-idp is one of the nine platform applications and qualifies to
+    // dev-qits-platform-idp on this estate.
+    assertEquals(
+        "http://dev-qits-platform-idp:8080/idp", value("quarkus.oidc-client.qits.auth-server-url"));
     assertEquals("qits-platform-orchestrator", value("quarkus.oidc-client.qits.client-id"));
     // Empty, not absent — SmallRye reads a configured-empty String as null, so an empty secret reads
     // as an empty Optional rather than as "" itself.
