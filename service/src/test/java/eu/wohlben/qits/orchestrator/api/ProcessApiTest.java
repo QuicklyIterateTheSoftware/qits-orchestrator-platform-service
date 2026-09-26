@@ -52,7 +52,7 @@ class ProcessApiTest {
         FakePeers.Scripted.ok(
             "{\"diskTotalBytes\":10,\"ociUnionBytes\":8,\"docsBytes\":1,\"sbomBytes\":1}"));
     peers.answer(
-        "/platform-deployments/api/pins",
+        "/deployments/api/pins",
         FakePeers.Scripted.ok("{\"pins\":[{\"applicationName\":\"qits-ci\",\"shas\":[\"abc\"]}]}"));
     peers.answer(
         "/maintenance/api/pins",

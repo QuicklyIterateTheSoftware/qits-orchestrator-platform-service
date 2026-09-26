@@ -26,7 +26,7 @@ so what comes after it still runs.
 |---|---|---|---|
 | `usage.before` | containers | `GET /containers/api/gc/usage` | — |
 | `artifacts.usage.before` | artifacts | `GET /artifacts/api/store/summary` | — |
-| `pins.deployments` | deployments | `GET /platform-deployments/api/pins` | — |
+| `pins.deployments` | deployments | `GET /deployments/api/pins` | — |
 | `pins.ci` | ci | `GET /ci/api/daemon` | — |
 | `pins.dependencies` | maintenance | `GET /maintenance/api/pins` | — |
 | `pins.images` | configuration | `GET /configuration/api/pins` | — |

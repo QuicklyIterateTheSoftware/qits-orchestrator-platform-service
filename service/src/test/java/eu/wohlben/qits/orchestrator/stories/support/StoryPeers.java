@@ -33,7 +33,7 @@ import java.util.Optional;
  * <pre>
  * usage.before / usage.after   qits-containers               GET  /containers/api/gc/usage
  * artifacts.usage.before/after qits-artifacts                GET  /artifacts/api/store/summary
- * pins.deployments             qits-platform-deployments     GET  /platform-deployments/api/pins
+ * pins.deployments             qits-platform-deployments     GET  /deployments/api/pins
  * pins.ci                      qits-ci                       GET  /ci/api/daemon
  * pins.dependencies            qits-platform-maintenance     GET  /maintenance/api/pins
  * pins.images                  qits-configuration            GET  /configuration/api/pins
@@ -159,7 +159,7 @@ public final class StoryPeers {
   public static final String IMAGES_PATH = "/containers/api/gc/images";
   public static final String VOLUMES_PATH = "/containers/api/gc/volumes";
   public static final String BUILD_CACHE_PATH = "/containers/api/gc/build-cache";
-  public static final String PINS_PATH = "/platform-deployments/api/pins";
+  public static final String PINS_PATH = "/deployments/api/pins";
   public static final String DAEMON_PATH = "/ci/api/daemon";
   public static final String PLAN_PATH = "/artifacts/api/gc/plan";
   public static final String SWEEP_PATH = "/artifacts/api/gc/sweep";
@@ -539,7 +539,7 @@ public final class StoryPeers {
     if (path.startsWith("/ci/")) {
       return CI;
     }
-    if (path.startsWith("/platform-deployments/")) {
+    if (path.startsWith("/deployments/")) {
       return DEPLOYMENTS;
     }
     if (path.startsWith("/projects/")) {

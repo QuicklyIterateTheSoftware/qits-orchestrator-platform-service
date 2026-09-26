@@ -40,7 +40,7 @@ class GcProcessTest {
 
   private static final String USAGE = "/containers/api/gc/usage";
   private static final String STORE = "/artifacts/api/store/summary";
-  private static final String DEPLOYMENT_PINS = "/platform-deployments/api/pins";
+  private static final String DEPLOYMENT_PINS = "/deployments/api/pins";
   private static final String CI_PIN = "/ci/api/daemon";
   private static final String DEPENDENCY_PINS = "/maintenance/api/pins";
   private static final String IMAGE_PINS = "/configuration/api/pins";
@@ -320,7 +320,7 @@ class GcProcessTest {
     // is the derived dev-qits-<alias> form (no QITS_ENVIRONMENT in this suite, so the `dev`
     // fallback), never the bare alias.
     assertEquals(
-        "http://dev-qits-deployments:8080/platform-deployments/api/pins",
+        "http://dev-qits-deployments:8080/deployments/api/pins",
         steps.get("pins.deployments").requestUrl);
     assertEquals("GET", steps.get("pins.deployments").requestMethod);
     // Every pin read addressed at its own shipped target — a step pointed at the wrong one would

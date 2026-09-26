@@ -67,7 +67,7 @@ import java.util.List;
  * <pre>
  * usage.before           containers     GET  /containers/api/gc/usage
  * artifacts.usage.before artifacts      GET  /artifacts/api/store/summary
- * pins.deployments       deployments    GET  /platform-deployments/api/pins
+ * pins.deployments       deployments    GET  /deployments/api/pins
  * pins.ci                ci             GET  /ci/api/daemon
  * pins.dependencies      maintenance    GET  /maintenance/api/pins
  * pins.images            configuration  GET  /configuration/api/pins
@@ -189,7 +189,7 @@ public class GcProcess implements TechnicalProcess {
             List.of(),
             context ->
                 StepResult.of(
-                    context.peers().get(PeerTarget.DEPLOYMENTS, "/platform-deployments/api/pins"),
+                    context.peers().get(PeerTarget.DEPLOYMENTS, "/deployments/api/pins"),
                     answer -> GcSummaries.deploymentPins(answer.json()))),
         new StepDefinition(
             PINS_CI,
