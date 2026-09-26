@@ -10,7 +10,7 @@
 # Every derivation the deployer makes hangs off this name — the wire alias peers dial, the container
 # it manages, the extras family, the database — so letting it follow the repository would
 # decommission the running service and start a stranger beside it.
-application: qits-orchestrator
+application: qits-platform-orchestrator
 
 # One route for this application's machine surface: the API at /orchestrator/api and the document at
 # /orchestrator/q. The edge path-routes every application's route prefix on EVERY host, so this one
